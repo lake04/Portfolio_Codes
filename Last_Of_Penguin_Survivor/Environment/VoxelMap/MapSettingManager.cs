@@ -141,10 +141,7 @@ namespace Island
         {
             InitializeChunk();
             map.InitializeSpawnPosition();
-            if(LOPNetworkManager.Instance.isConnected == false)
-            {
-                TreeManager.Instance.SpawnTree();
-            }
+            
             TemperatureManager.Instance.SetDayCycleTemperature(TemperatureType.Normal, TemperatureType.Normal);//두번째 온도는 원래 TemperatureType.cold
         }
 
@@ -164,17 +161,22 @@ namespace Island
         private void InitializeChunk()
         {
             Vector3 mapPos = Vector3.up * parentChunkYPos;
+
             GroundChunkParent.transform.position = mapPos;
 
             Vector3 mapPos1 = Vector3.up * parentChunkYPos;
+
             WaterChunkParent.transform.position = mapPos1;
             WaterChunkParent.transform.localScale = new Vector3(1, WaterChunkObjectYScale, 1);
+            //WaterChunkParent.transform.localScale = new Vector3(1, 1, 1);
 
             waterBorderChunkParent.transform.position = mapPos1;
             waterBorderChunkParent.transform.localScale = new Vector3(1, WaterChunkObjectYScale, 1);
+            //wallBorderChunkParent.transform.localScale = Vector3.one;
 
             wallBorderChunkParent.transform.position = mapPos;
             wallBorderChunkParent.transform.localScale = Vector3.one;
+
         }
 
         public void DrySoil(Vector3 pos)

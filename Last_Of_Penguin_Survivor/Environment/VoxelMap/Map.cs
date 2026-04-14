@@ -1,17 +1,20 @@
 ﻿namespace Island
 {
+    using System.Collections;
 	// # System
 	using System.Collections.Generic;
-    using System.Collections;
+    using System.Drawing;
     using System.Linq;
     using Unity.VisualScripting;
+    using System.Diagnostics;
 
     // # Unity
-	using UnityEngine;
+    using UnityEngine;
 	using UnityEngine.UIElements;
+    using Debug = UnityEngine.Debug;
 
-	// # Etc
-	using static BlockConstants;
+    // # Etc
+    using static BlockConstants;
 
 	public class Map
 	{
@@ -53,21 +56,21 @@
 			}
 		};
 
-		private Chunk[,] groundChunks;
-		private Chunk[,] waterChunks;
+        private Dictionary<Vector2Int, Chunk> groundChunks = new Dictionary<Vector2Int, Chunk>();
+        private Dictionary<Vector2Int, Chunk> waterChunks = new Dictionary<Vector2Int, Chunk>();
 
-		public Map(MapSettingManager mapSettingManager)
+        private int activationRange = 5;
+
+        Stopwatch watch = new Stopwatch();
+
+        public Map(MapSettingManager mapSettingManager)
 		{
 			this.mapSettingManager = mapSettingManager;
-		
-			groundChunks = new Chunk[mapSettingManager.ChunkCountX, mapSettingManager.ChunkCountY];
-			waterChunks = new Chunk[mapSettingManager.ChunkCountX, mapSettingManager.ChunkCountY];
 		}
 
         public void Initialize()
         {
-
-            mapWidthInBlocks = mapSettingManager.ChunkCountX * ChunkConfig.ChunkWidthValue;
+			mapWidthInBlocks =  mapSettingManager.ChunkCountX * ChunkConfig.ChunkWidthValue;
             mapLengthInBlocks = mapSettingManager.ChunkCountY * ChunkConfig.ChunkLengthValue;
             mapHeightInBlocks = ChunkConfig.ChunkHeightValue;
 
@@ -81,17 +84,14 @@
                     DrawMap(x, z);
                 }
             }
-            BuildBoundaryColliders();
-        }
+		}
 
 
         /// <summary> 주어진 청크 좌표에서 해당하는 청크를 업데이트합니다. </summary>
         public void DrawMap(int x, int z)
 		{
-       
            GetChunkFromChunkCoord(x, z, ChunkType.Ground).UpdateChunk();
            GetChunkFromChunkCoord(x, z, ChunkType.Water).UpdateChunk();
-          
 		}
 
 		/// <summary> 맵을 생성하고, 청크를 생성하여 표시합니다. </summary>
@@ -105,25 +105,25 @@
 				}
 			}
 
-			GenerateOuterWaterChunks();
-			DrawOuterWaterChunks();
-
-
+			//GenerateOuterWaterChunks();
+			//DrawOuterWaterChunks();
         }
 
         /// <summary> 주어진 좌표에서 청크를 생성합니다. </summary>
         public void GenerateChunk(int x, int z)
 		{
-                Chunk groundTempChunk = new Chunk(new Vector2Int(x, z), this, mapSettingManager, ChunkType.Ground, false);
-                Chunk waterTempChunk = new Chunk(new Vector2Int(x, z), this, mapSettingManager, ChunkType.Water, false);
+            Vector2Int coord = new Vector2Int(x, z);
 
-                groundChunks[x, z] = groundTempChunk;
-                waterChunks[x, z] = waterTempChunk;
+            Chunk groundTempChunk =  new Chunk(coord, this, mapSettingManager, ChunkType.Ground, false);
+            Chunk waterTempChunk  =  new Chunk(coord, this, mapSettingManager, ChunkType.Water, false);
 
-                // 광물 클러스터 생성
-                GenerateResourceClusters(groundTempChunk);
-            
-		}
+            groundChunks.Add(coord, groundTempChunk);
+            waterChunks.Add(coord, waterTempChunk);
+
+            // 광물 클러스터 생성
+            GenerateResourceClusters(groundTempChunk);
+
+        }
 
 		private void DrawOuterWaterChunks()
 		{
@@ -167,8 +167,47 @@
 			GetChunkFromPosition(pos, ChunkType.Ground).UpdateChunk();
 		}
 
-		/// <summary> 스폰 위치를 초기화합니다. </summary>
-		public void InitializeSpawnPosition()
+		public IEnumerator AroundUpdateChunk(Vector2 pos)
+		{
+            watch.Reset();
+            watch.Start();
+
+            int chunkX = Mathf.FloorToInt(pos.x);
+            int chunkZ = Mathf.FloorToInt(pos.y);
+
+            HashSet<Vector2Int> activeCoords = new HashSet<Vector2Int>();
+            for (int x = chunkX - activationRange; x <= chunkX + activationRange; x++)
+			{
+				for (int z = chunkZ - activationRange; z <= chunkZ + activationRange; z++)
+				{
+                    Vector2Int coord = new Vector2Int(x, z);
+
+                    activeCoords.Add(coord);
+                    if (IsChunkInMap(x,z))
+					{
+                        SetChunkActive(coord, true);
+                    }
+					else
+					{
+                        GenerateChunk(x, z);
+                        DrawMap(x, z);
+
+                        yield return null;
+                    }
+                    Chunk chunk = GetChunkFromChunkCoord(x, z, ChunkType.Ground);
+                    if(chunk.isDayTreeSpawn == true)
+                    {
+                        TreeManager.Instance.SpawnTree(coord);
+                        chunk.isDayTreeSpawn = false;
+                    }
+                }
+            }
+            watch.Stop();
+            RemoveChunks(activeCoords);
+        }
+
+        /// <summary> 스폰 위치를 초기화합니다. </summary>
+        public void InitializeSpawnPosition()
 		{
 			Vector3 spawnPosition = new Vector3(
 					ChunkConfig.ChunkWidthValue * mapSettingManager.ChunkCountX * 0.5f,
@@ -188,24 +227,22 @@
 				mapSettingManager.Seed
 			);
 
-			float mapWidth = mapSettingManager.ChunkCountX * ChunkConfig.ChunkWidthValue;
-			float mapLength = mapSettingManager.ChunkCountY * ChunkConfig.ChunkLengthValue;
-			Vector2 mapCenter = new Vector2(mapWidth / 2f, mapLength / 2f);
-			float distFromCenter = Vector2.Distance(new Vector2(pos.x, pos.z), mapCenter);
-			float t = 1f - Mathf.Clamp01(distFromCenter / mapSettingManager.FalloffRadius);
-			float falloffFactor = Mathf.SmoothStep(0f, 1f, t);
+            Vector2 mapCenter = new Vector2(ChunkConfig.ChunkWidthValue / 2f, ChunkConfig.ChunkLengthValue/ 2f);
 
-			float adjustedHeight = baseHeight - (1f - falloffFactor) * mapSettingManager.MaxFalloffHeight;
+            float distFromCenter = Vector2.Distance(new Vector2(pos.x, pos.z), mapCenter);
 
-			adjustedHeight = Mathf.Max(adjustedHeight, mapSettingManager.MinHeightLimit);
+            float t = 1f - Mathf.Clamp01(distFromCenter / mapSettingManager.FalloffRadius);
+            float falloffFactor = Mathf.SmoothStep(0.2f, 1f, t);
 
-			return Mathf.FloorToInt(adjustedHeight);
+            float adjustedHeight = baseHeight - (1f - falloffFactor) * mapSettingManager.MaxFalloffHeight;
+
+            adjustedHeight = Mathf.Max(adjustedHeight, mapSettingManager.MinHeightLimit);
+            return Mathf.FloorToInt(adjustedHeight);
 		}
 
 		/// <summary> 주어진 위치와 블록 높이에 따라 해당 블록의 데이터를 계산하여 반환합니다. </summary>
 		public BlockData CalculateBlockData(Vector3 pos, int blockHeight)
 		{
-
 			if (pos.y < 1)
 				return FindBlockType(Bedrock);
 
@@ -218,9 +255,8 @@
 			else if (pos.y < blockHeight)
 				return GetBlockTypeWithNoise(new Vector2(pos.x, pos.z));
 
-
 			else return FindBlockType(Air);
-		}
+        }
 		#endregion
 
 		#region 광물 블럭 설정 
@@ -296,13 +332,15 @@
 
 			if (IsChunkInMap(x, z))
 			{
-				return chunkType switch
-				{
-					ChunkType.Ground => groundChunks[x, z],
-					ChunkType.Water => waterChunks[x, z],
-					_ => null
-				};
-			}
+                if (chunkType == ChunkType.Ground && groundChunks.TryGetValue(new Vector2Int(x,z), out Chunk groundChunk))
+                {
+                    return groundChunk;
+                }
+                if (chunkType == ChunkType.Water && waterChunks.TryGetValue(new Vector2Int(x, z), out Chunk waterChunk))
+                {
+                    return waterChunk;
+                }
+            }
 
 			if (chunkType == ChunkType.Water)
 			{
@@ -324,29 +362,34 @@
 			int coordX = Mathf.FloorToInt(x / ChunkConfig.ChunkWidthValue);
 			int coordZ = Mathf.FloorToInt(z / ChunkConfig.ChunkLengthValue);
 
-			switch (chunkType)
-			{
-				case ChunkType.Ground:
-					return groundChunks[coordX, coordZ];
-				case ChunkType.Water:
-					return waterChunks[coordX, coordZ];
-			}
+            if (chunkType == ChunkType.Ground && groundChunks.TryGetValue(new Vector2Int(coordX,coordZ), out Chunk groundChunk))
+            {
+                return groundChunk;
+            }
+            if (chunkType == ChunkType.Water && waterChunks.TryGetValue(new Vector2Int(coordX, coordZ), out Chunk waterChunk))
+            {
+                return waterChunk;
+            }
 
-			return null;
+            return null;
 		}
 
 		/// <summary> 주어진 청크 좌표와 청크 타입에 맞는 청크를 반환합니다. </summary>	
 		public Chunk GetChunkFromChunkCoord(int x, int z, ChunkType chunkType)
 		{
-			switch (chunkType)
+            Vector2Int coord = new Vector2Int(x, z);
+            if (chunkType == ChunkType.Ground && groundChunks.TryGetValue(coord, out Chunk groundChunk))
 			{
-				case ChunkType.Ground:
-					return groundChunks[x, z];
-				case ChunkType.Water:
-					return waterChunks[x, z];
-			}
-			Debug.Log($"{x} : {z} 좌표에 있는 청크가 없습니다");
-			return null;
+                return groundChunk;
+            }
+            if (chunkType == ChunkType.Water && waterChunks.TryGetValue(coord, out Chunk waterChunk))
+			{
+                return waterChunk;
+            }
+#if UNITY_EDITOR
+            Debug.Log($"{x} : {z} 좌표에 있는 청크가 없습니다");
+#endif
+            return null;
 		}
 
 		/// <summary> 주어진 위치에 맞는 블럭 데이터를 반환합니다. </summary>
@@ -372,34 +415,59 @@
 		/// <summary> 주어진 복셀 위치가 맵 내에 있는지 확인하여 반환합니다. </summary>
 		public bool IsVoxelInMap(Vector3 pos)
 		{
-			int x = Mathf.FloorToInt(pos.x);
 			int y = Mathf.FloorToInt(pos.y);
-			int z = Mathf.FloorToInt(pos.z);
 
-			if (x < 0 || x >= (mapSettingManager.ChunkCountX * ChunkConfig.ChunkWidthValue) ||
-				z < 0 || z >= (mapSettingManager.ChunkCountY * ChunkConfig.ChunkLengthValue) ||
-				y < 0 || y >= ChunkConfig.ChunkHeightValue)
+			if (y < 0 || y >= ChunkConfig.ChunkHeightValue)
 				return false;
 			else
 				return true;
-		}
+        }
 
-		/// <summary> 주어진 청크가 맵 내에 있는지 확인하여 반환합니다. </summary>
-		public bool IsChunkInMap(int x, int z)
-		{
-			if (x >= 0 && x < mapSettingManager.ChunkCountX &&
-				z >= 0 && z < mapSettingManager.ChunkCountY)
-				return true;
-			else
-				return false;
-		}
+        /// <summary> 주어진 청크가 맵 내에 있는지 확인하여 반환합니다. </summary>
+        public bool IsChunkInMap(int x, int z)
+        {
+            return (groundChunks.ContainsKey(new Vector2Int(x, z)));
+        }
 
-		private bool IsInChunkBounds(Vector3Int pos)
+        private bool IsInChunkBounds(Vector3Int pos)
 		{
 			return pos.x >= 0 && pos.x < ChunkConfig.ChunkWidthValue &&
 				   pos.y >= 0 && pos.y < ChunkConfig.ChunkHeightValue &&
 				   pos.z >= 0 && pos.z < ChunkConfig.ChunkLengthValue;
 		}
+
+        private void SetChunkActive(Vector2Int coord, bool isActive)
+        {
+            if (groundChunks.TryGetValue(coord, out Chunk groundChunk))
+            {
+                groundChunk.IsActive = isActive;
+            }
+            if (waterChunks.TryGetValue(coord, out Chunk waterChunk))
+            {
+                waterChunk.IsActive = isActive;
+            }
+        }
+
+        private void RemoveChunks(HashSet<Vector2Int> activeCoords)
+        {
+            watch.Reset();
+            watch.Start();
+
+            List<Vector2Int> chunksToRemove = new List<Vector2Int>();
+
+            foreach (var coord in groundChunks.Keys)
+            {
+                if (!activeCoords.Contains(coord)) chunksToRemove.Add(coord);
+            }
+            foreach (var coord in chunksToRemove)
+            {
+                SetChunkActive(coord, false);
+
+                groundChunks.Remove(coord);
+                waterChunks.Remove(coord);
+            }
+            watch.Stop();
+        }
 
         #endregion
 
@@ -409,35 +477,39 @@
         {
             // Y 경계 확인
             if (y < 0 || y >= mapHeightInBlocks)
-                return FindBlockType(BlockConstants.Air); 
+                return FindBlockType(BlockConstants.Air);
 
-            x = Mathf.Clamp(x, 0, mapWidthInBlocks - 1);
-            z = Mathf.Clamp(z, 0, mapLengthInBlocks - 1);
+            int chunkX = Mathf.FloorToInt((float)x / ChunkConfig.ChunkWidthValue);
+            int chunkZ = Mathf.FloorToInt((float)z / ChunkConfig.ChunkLengthValue);
 
-            int chunkX = x / ChunkConfig.ChunkWidthValue;
-            int chunkZ = z / ChunkConfig.ChunkLengthValue;
+            int localX = x - (chunkX * ChunkConfig.ChunkWidthValue);
+            int localZ = z - (chunkZ * ChunkConfig.ChunkLengthValue);
 
-            int localX = x % ChunkConfig.ChunkWidthValue;
-            int localZ = z % ChunkConfig.ChunkLengthValue;
+            if (groundChunks.TryGetValue(new Vector2Int(chunkX, chunkZ), out Chunk groundChunk))
+            {
+                return groundChunk.chunkData.chunkBlocks[localX, y, localZ];
+            }
 
-            return groundChunks[chunkX, chunkZ].chunkData.chunkBlocks[localX, y, localZ];
+            return FindBlockType(BlockConstants.Air);
         }
 
-      
+
         public void UpdateBlockTopTexture(int x, int y, int z, string newTextureID, int rotation = 0)
         {
-            int chunkX = x / ChunkConfig.ChunkWidthValue;
-            int chunkZ = z / ChunkConfig.ChunkLengthValue;
+            int chunkX = Mathf.FloorToInt((float)x / ChunkConfig.ChunkWidthValue);
+            int chunkZ = Mathf.FloorToInt((float)z / ChunkConfig.ChunkLengthValue);
 
-            int localX = x % ChunkConfig.ChunkWidthValue;
-            int localZ = z % ChunkConfig.ChunkLengthValue;
+            if (groundChunks.TryGetValue(new Vector2Int(chunkX, chunkZ), out Chunk chunk))
+            {
+                int localX = x - (chunkX * ChunkConfig.ChunkWidthValue);
+                int localZ = z - (chunkZ * ChunkConfig.ChunkLengthValue);
 
-            BlockData blockToUpdate = groundChunks[chunkX, chunkZ].chunkData.chunkBlocks[localX, y, localZ];
+                BlockData blockToUpdate = chunk.chunkData.chunkBlocks[localX, y, localZ];
+                blockToUpdate.SetBlockTextureID(BlockSurfaceType.Top, newTextureID);
+                blockToUpdate.rotation = rotation;
 
-            blockToUpdate.SetBlockTextureID(BlockSurfaceType.Top, newTextureID);
-            blockToUpdate.rotation = rotation;
-
-            GetChunkFromChunkCoord(chunkX, chunkZ, ChunkType.Ground).UpdateChunk();
+                chunk.UpdateChunk();
+            }
         }
 
         /// <summary>
@@ -581,22 +653,21 @@
         /// </summary>
         public void BuildBoundaryColliders()
 		{
+           int width = mapSettingManager.ChunkCountX * ChunkConfig.ChunkWidthValue;
+           int length = mapSettingManager.ChunkCountY * ChunkConfig.ChunkLengthValue;
+           float height = ChunkConfig.ChunkHeightValue;
+
+           float blockThick = 1f;
+
+           // 왼쪽 벽
+           CreateWall(new Vector3(-0.5f, height / 2f, length / 2f), new Vector3(blockThick, height, length));
+           // 오른쪽 벽
+           CreateWall(new Vector3(width - 0.5f, height / 2f, length / 2f), new Vector3(blockThick, height, length));
+           // 아래쪽 벽
+           CreateWall(new Vector3(width / 2f, height / 2f, -0.5f), new Vector3(width, height, blockThick));
+           // 위쪽 벽
+           CreateWall(new Vector3(width / 2f, height / 2f, length - 0.5f), new Vector3(width, height, blockThick));
 		
-                int width = mapSettingManager.ChunkCountX * ChunkConfig.ChunkWidthValue;
-                int length = mapSettingManager.ChunkCountY * ChunkConfig.ChunkLengthValue;
-                float height = ChunkConfig.ChunkHeightValue;
-
-                float blockThick = 1f;
-
-                // 왼쪽 벽
-                CreateWall(new Vector3(-0.5f, height / 2f, length / 2f), new Vector3(blockThick, height, length));
-                // 오른쪽 벽
-                CreateWall(new Vector3(width - 0.5f, height / 2f, length / 2f), new Vector3(blockThick, height, length));
-                // 아래쪽 벽
-                CreateWall(new Vector3(width / 2f, height / 2f, -0.5f), new Vector3(width, height, blockThick));
-                // 위쪽 벽
-                CreateWall(new Vector3(width / 2f, height / 2f, length - 0.5f), new Vector3(width, height, blockThick));
-			
 		}
 
 		/// <summary>

@@ -1,8 +1,10 @@
 ﻿namespace Island
 {
+    using Lop.Survivor;
     // # System
     using System;
     using System.Collections.Generic;
+    using Unity.VisualScripting;
 
     // # Unity
     using UnityEngine;
@@ -31,6 +33,25 @@
 
         private Map map = null;
 
+        public Vector3 Position
+        {
+            get { return chunkObject.transform.localPosition; }
+        }
+
+        public bool IsActive
+        {
+            get => chunkObject.activeSelf;
+            set => chunkObject.SetActive(value);
+        }
+
+        public GameObject GameObject
+        {
+            get { return chunkObject; }
+        }
+
+        public bool isDayTreeSpawn = true;
+
+
         public Chunk(Vector2Int coord, Map map, MapSettingManager mapSettingManager, ChunkType chunkType, bool isOuter)
         {
             chunkData = new ChunkData(coord, chunkType);
@@ -46,7 +67,7 @@
             meshRenderer = chunkObject.GetComponent<MeshRenderer>();
             meshCollider = chunkObject.GetComponent<MeshCollider>();
 
-            chunkObject.transform.localPosition = new Vector3(coord.x * ChunkConfig.ChunkWidthValue, 0.0f, coord.y * ChunkConfig.ChunkLengthValue);
+
             chunkObject.name = $"Chunk {coord.x}.{coord.y}";
 
             this.isOuter = isOuter;
@@ -55,11 +76,14 @@
             {
                 case ChunkType.Ground:
                     chunkObject.transform.SetParent(mapSettingManager.GroundChunkParent);
+                    chunkObject.transform.localPosition = new Vector3Int(coord.x * ChunkConfig.ChunkWidthValue, 0, coord.y * ChunkConfig.ChunkLengthValue);
                     meshRenderer.material = mapSettingManager.MapGroundMaterial;
                     break;
 
                 case ChunkType.Water:
                     chunkObject.transform.SetParent(this.isOuter ? mapSettingManager.WaterBorderChunkParent : mapSettingManager.WaterChunkParent);
+                    chunkObject.transform.localPosition = new Vector3Int(coord.x * ChunkConfig.ChunkWidthValue, 0, coord.y * ChunkConfig.ChunkLengthValue);
+                    chunkObject.transform.localScale = Vector3.one;
                     meshRenderer.material = mapSettingManager.MapWaterMaterial;
                     break;
             }
@@ -88,7 +112,7 @@
                         {
                             groundCount++;
                         }
-                        if(groundCount>=10)
+                        if (groundCount >= 10)
                         {
                             CollectibleObject collectible = chunkObject.AddComponent<CollectibleObject>();
                             collectible.objectId = targetID;
@@ -111,27 +135,22 @@
                     CollectibleObject collectible = chunkObject.AddComponent<CollectibleObject>();
                     collectible.objectId = "Water";
                 }
-                CreateWaterBarrier();
+                CreateWaterCollider();
             }
+
+            TickManager.Instance.OnDayInitialize += RespawnTree;
         }
 
 
-        private void CreateWaterBarrier()
+        private void CreateWaterCollider()
         {
             // 빈 자식 오브젝트 생성
-            GameObject waterObj = new GameObject("WaterBarrier");
+            GameObject waterObj = new GameObject("WaterCollider");
             waterObj.transform.SetParent(chunkObject.transform, false);
             waterObj.transform.localPosition = Vector3.zero;
 
             // 레이어 설정
-            waterObj.layer = LayerMask.NameToLayer("WaterBarrier");
-
-            // 만약 Layer이름이 외부에서 변경될 경우를 대비
-            if (waterObj.layer != LayerMask.NameToLayer("WaterBarrier"))
-            {
-                waterObj.layer = 12; // 현재 WaterBarrier의 Layer위치
-                Debug.Assert(waterObj.layer == LayerMask.NameToLayer("Default"), waterObj.name + "의 Layer가 설정되지 않았습니다.");
-            }
+            waterObj.layer = LayerMask.NameToLayer("WaterCrash");
 
             // MeshCollider 추가
             waterCollider = waterObj.AddComponent<MeshCollider>();
@@ -144,16 +163,7 @@
         }
 
         ///<summary>현재 청크의 월드 공간 위치를 가져옵니다.</summary>
-        public Vector3 Position
-        {
-            get { return chunkObject.transform.localPosition; }
-        }
 
-        public bool IsActive
-        {
-            get => chunkObject.activeSelf;
-            set => chunkObject.SetActive(value);
-        }
 
         private Vector3 ToWorldPos(in Vector3 pos) => Position + pos;
         private Vector3 ToWorldPos(int x, int y, int z) => Position + new Vector3(x, y, z);
@@ -480,6 +490,11 @@
             }
 
             return false;
+        }
+
+        private void RespawnTree()
+        {
+            isDayTreeSpawn = true;
         }
     }
 }
