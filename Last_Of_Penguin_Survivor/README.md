@@ -5,9 +5,6 @@
   <a href="#">
  <img src="https://img.shields.io/badge/2025%20지스타%20·%20게임스컴-전시작-blue?style=flat-square" alt="Exhibition">
   </a>
-  <a href="#">
-    <img src="https://img.shields.io/badge/2025%20서울%20직업계고%20IT%20UP-동상%20수상-orange?style=flat-square" alt="Award">
-  </a>
   <br/>
   <img src="https://img.shields.io/badge/Unity-2021.3+-black?logo=unity" alt="Unity">
   <img src="https://img.shields.io/badge/C%23-239120?logo=c-sharp&logoColor=white" alt="C#">
