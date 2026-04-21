@@ -1,14 +1,14 @@
 <div align="center">
   <h1>🌿 Last Of Penguin Survivor</h1>
-  <p><b>펭권들의 </b></p>
+  <p><b>펭권들의 지구 온나화로 인해 녹아가는 섬에서 살아남아가는 게임입니다.</b></p>
 
   <a href="#">
  <img src="https://img.shields.io/badge/2025%20지스타%20·%20게임스컴-전시작-blue?style=flat-square" alt="Exhibition">
   </a>
   <br/>
-  <img src="https://img.shields.io/badge/Unity-2021.3+-black?logo=unity" alt="Unity">
+  <img src="https://img.shields.io/badge/Unity6black?logo=unity" alt="Unity">
   <img src="https://img.shields.io/badge/C%23-239120?logo=c-sharp&logoColor=white" alt="C#">
-  <img src="https://img.shields.io/badge/Networking-Photon%20Fusion-005194" alt="Photon Fusion">
+  <img src="https://img.shields.io/badge/자체서버%20Fusion-005194" alt="Photon Fusion">
 </div>
 
 <br/>
