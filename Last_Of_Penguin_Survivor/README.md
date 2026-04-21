@@ -6,9 +6,8 @@
  <img src="https://img.shields.io/badge/2025%20지스타%20·%20게임스컴-전시작-blue?style=flat-square" alt="Exhibition">
   </a>
   <br/>
-  <img src="https://img.shields.io/badge/Unity6black?logo=unity" alt="Unity">
+ <img src="https://img.shields.io/badge/Unity-6-black?logo=unity" alt="Unity">
   <img src="https://img.shields.io/badge/C%23-239120?logo=c-sharp&logoColor=white" alt="C#">
-  <img src="https://img.shields.io/badge/자체서버">
 </div>
 
 <br/>
