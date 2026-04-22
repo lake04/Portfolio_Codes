@@ -8,6 +8,7 @@
   <br/>
  <img src="https://img.shields.io/badge/Unity-6-black?logo=unity" alt="Unity">
   <img src="https://img.shields.io/badge/C%23-239120?logo=c-sharp&logoColor=white" alt="C#">
+  <img src="https://img.shields.io/badge/GitLab-FC6D26?style=flat&logo=gitlab&logoColor=white" alt="GitLab">
 </div>
 
 <br/>
