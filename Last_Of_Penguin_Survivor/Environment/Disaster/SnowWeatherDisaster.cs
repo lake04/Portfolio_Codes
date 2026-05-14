@@ -7,7 +7,6 @@ public class SnowWeatherDisaster : Disaster
     public ParticleSystem snowEffect;
     [SerializeField] private Vector3 spawnPos;
     private ParticleSystem snowParticle;
-
     public override IEnumerator IE_StartDisaster()
     {
         Debug.Log("눈 재해 시작");
@@ -39,7 +38,15 @@ public class SnowWeatherDisaster : Disaster
     {
         RenderSettings.fog = false;
         snowParticle.Stop();
-        Destroy(snowParticle);
+        if (LOPNetworkManager.Instance.isConnected)
+        {
+            LOPNetworkManager.Instance.NetworkDestroy(snowParticle.gameObject);
+        }
+        else if (LOPNetworkManager.Instance.isConnected == false)
+        {
+            Destroy(snowParticle.gameObject);
+        }
+        snowParticle = null;
         Debug.Log("안개 효과 비활성화.");
     }
 }

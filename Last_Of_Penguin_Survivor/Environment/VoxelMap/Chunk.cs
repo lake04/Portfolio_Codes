@@ -1,10 +1,8 @@
 ﻿namespace Island
 {
-    using Lop.Survivor;
     // # System
     using System;
     using System.Collections.Generic;
-    using Unity.VisualScripting;
 
     // # Unity
     using UnityEngine;
@@ -33,25 +31,6 @@
 
         private Map map = null;
 
-        public Vector3 Position
-        {
-            get { return chunkObject.transform.localPosition; }
-        }
-
-        public bool IsActive
-        {
-            get => chunkObject.activeSelf;
-            set => chunkObject.SetActive(value);
-        }
-
-        public GameObject GameObject
-        {
-            get { return chunkObject; }
-        }
-
-        public bool isDayTreeSpawn = true;
-
-
         public Chunk(Vector2Int coord, Map map, MapSettingManager mapSettingManager, ChunkType chunkType, bool isOuter)
         {
             chunkData = new ChunkData(coord, chunkType);
@@ -67,7 +46,7 @@
             meshRenderer = chunkObject.GetComponent<MeshRenderer>();
             meshCollider = chunkObject.GetComponent<MeshCollider>();
 
-
+            chunkObject.transform.localPosition = new Vector3(coord.x * ChunkConfig.ChunkWidthValue, 0.0f, coord.y * ChunkConfig.ChunkLengthValue);
             chunkObject.name = $"Chunk {coord.x}.{coord.y}";
 
             this.isOuter = isOuter;
@@ -76,14 +55,11 @@
             {
                 case ChunkType.Ground:
                     chunkObject.transform.SetParent(mapSettingManager.GroundChunkParent);
-                    chunkObject.transform.localPosition = new Vector3Int(coord.x * ChunkConfig.ChunkWidthValue, 0, coord.y * ChunkConfig.ChunkLengthValue);
                     meshRenderer.material = mapSettingManager.MapGroundMaterial;
                     break;
 
                 case ChunkType.Water:
                     chunkObject.transform.SetParent(this.isOuter ? mapSettingManager.WaterBorderChunkParent : mapSettingManager.WaterChunkParent);
-                    chunkObject.transform.localPosition = new Vector3Int(coord.x * ChunkConfig.ChunkWidthValue, 0, coord.y * ChunkConfig.ChunkLengthValue);
-                    chunkObject.transform.localScale = Vector3.one;
                     meshRenderer.material = mapSettingManager.MapWaterMaterial;
                     break;
             }
@@ -112,7 +88,7 @@
                         {
                             groundCount++;
                         }
-                        if (groundCount >= 10)
+                        if(groundCount>=10)
                         {
                             CollectibleObject collectible = chunkObject.AddComponent<CollectibleObject>();
                             collectible.objectId = targetID;
@@ -135,22 +111,27 @@
                     CollectibleObject collectible = chunkObject.AddComponent<CollectibleObject>();
                     collectible.objectId = "Water";
                 }
-                CreateWaterCollider();
+                CreateWaterBarrier();
             }
-
-            TickManager.Instance.OnDayInitialize += RespawnTree;
         }
 
 
-        private void CreateWaterCollider()
+        private void CreateWaterBarrier()
         {
             // 빈 자식 오브젝트 생성
-            GameObject waterObj = new GameObject("WaterCollider");
+            GameObject waterObj = new GameObject("WaterBarrier");
             waterObj.transform.SetParent(chunkObject.transform, false);
             waterObj.transform.localPosition = Vector3.zero;
 
             // 레이어 설정
-            waterObj.layer = LayerMask.NameToLayer("WaterCrash");
+            waterObj.layer = LayerMask.NameToLayer("WaterBarrier");
+
+            // 만약 Layer이름이 외부에서 변경될 경우를 대비
+            if (waterObj.layer != LayerMask.NameToLayer("WaterBarrier"))
+            {
+                waterObj.layer = 12; // 현재 WaterBarrier의 Layer위치
+                Debug.Assert(waterObj.layer == LayerMask.NameToLayer("Default"), waterObj.name + "의 Layer가 설정되지 않았습니다.");
+            }
 
             // MeshCollider 추가
             waterCollider = waterObj.AddComponent<MeshCollider>();
@@ -163,7 +144,16 @@
         }
 
         ///<summary>현재 청크의 월드 공간 위치를 가져옵니다.</summary>
+        public Vector3 Position
+        {
+            get { return chunkObject.transform.localPosition; }
+        }
 
+        public bool IsActive
+        {
+            get => chunkObject.activeSelf;
+            set => chunkObject.SetActive(value);
+        }
 
         private Vector3 ToWorldPos(in Vector3 pos) => Position + pos;
         private Vector3 ToWorldPos(int x, int y, int z) => Position + new Vector3(x, y, z);
@@ -276,64 +266,27 @@
             chunkData.chunkBlocks[localX, globalY, localZ].level += 1;
             int posLevel = chunkData.chunkBlocks[localX, globalY, localZ].level;
 
-            if (LOPNetworkManager.Instance.isConnected)
-            {
-                LOPNetworkManager.Instance.SendBlockUpdate(globalPos, blockID, posLevel);
-            }
-
             if (chunkData.chunkBlocks[localX, globalY, localZ].level >= 3)
             {
                 DropItemSpawner.Instance.SpawnItem(new InventoryItem(ItemGenerator.Instance.GetItemDataFromBlock(blockID), 1), pos + new Vector3(0.5f, -0.5f, 0.5f));
+                chunkData.chunkBlocks[localX, globalY, localZ] = MapSettingManager.Instance.Map.FindBlockType("Air");
 
-                var waterChunk = map.GetChunkFromPosition(pos, ChunkType.Water);
-                if (IsWaterAdjacent(pos))
+                if (LOPNetworkManager.Instance.isConnected)
                 {
-                    chunkData.chunkBlocks[localX, globalY, localZ] = MapSettingManager.Instance.Map.FindBlockType("Air");
-                    chunkData.chunkBlocks[localX, globalY - 1, localZ] = MapSettingManager.Instance.Map.FindBlockType(BlockConstants.Water);
-
-                    waterChunk.chunkData.chunkBlocks[localX, globalY, localZ] = MapSettingManager.Instance.Map.FindBlockType("Air");
-                    waterChunk.chunkData.chunkBlocks[localX, globalY - 1, localZ] = MapSettingManager.Instance.Map.FindBlockType(BlockConstants.Water);
-
-                    if (LOPNetworkManager.Instance.isConnected)
-                    {
-                        LOPNetworkManager.Instance.SendBlockUpdate(globalPos, "Air");
-
-                        Vector3Int posBelow = new Vector3Int(globalX, globalY - 1, globalZ);
-                        LOPNetworkManager.Instance.SendBlockUpdate(posBelow, BlockConstants.Water);
-                    }
-
-                    if (chunkData.chunkBlocks[localX, globalY - 1, localZ].id == BlockConstants.Water
-            || waterChunk.chunkData.chunkBlocks[localX, globalY - 1, localZ].id == BlockConstants.Water)
-                    {
-                        Debug.Log("밑에 땅 있으니까, 바로 이 자리(globalY)에 물 채움");
-
-                        chunkData.chunkBlocks[localX, globalY - 2, localZ] = MapSettingManager.Instance.Map.FindBlockType(BlockConstants.Water);
-                        waterChunk.chunkData.chunkBlocks[localX, globalY - 2, localZ] = MapSettingManager.Instance.Map.FindBlockType(BlockConstants.Water);
-
-                        if (LOPNetworkManager.Instance.isConnected)
-                        {
-                            Vector3Int posTwoBelow = new Vector3Int(globalX, globalY - 2, globalZ);
-                            LOPNetworkManager.Instance.SendBlockUpdate(posTwoBelow, BlockConstants.Water);
-                        }
-                    }
-
-                    waterChunk.UpdateChunk();
-                    waterChunk.UpdateSurroundingVoxels(localX, globalY, localZ);
-                }
-                else
-                {
-                    chunkData.chunkBlocks[localX, globalY, localZ] = MapSettingManager.Instance.Map.FindBlockType("Air");
-                    if (LOPNetworkManager.Instance.isConnected)
-                    {
-                        LOPNetworkManager.Instance.SendBlockUpdate(globalPos, "Air");
-
-                    }
+                    LOPNetworkManager.Instance.SendBlockUpdate(globalPos, "Air");
                 }
 
                 UpdateChunk();
-                map.UpdateNeighborTextures(globalX, globalY, globalZ);
                 UpdateSurroundingVoxels(localX, globalY, localZ);
+                WaterManager.Instance.WakeUpAdjacentWater(globalPos);
                 return true;
+            }
+            else
+            {
+                if (LOPNetworkManager.Instance.isConnected)
+                {
+                    LOPNetworkManager.Instance.SendBlockUpdate(globalPos, blockID, posLevel);
+                }
             }
 
             UpdateChunk();
@@ -454,47 +407,6 @@
                 return neighbor.isSolid;
 
             return neighbor.id == BlockConstants.Water;
-        }
-
-        public bool IsWaterAdjacent(Vector3 pos)
-        {
-            int globalX = Mathf.FloorToInt(pos.x);
-            int globalY = Mathf.FloorToInt(pos.y);
-            int globalZ = Mathf.FloorToInt(pos.z);
-
-            Vector3[] directions = new Vector3[5]
-            {
-                new Vector3( 0.0f,  -1.0f, -1.0f ), // Back
-				new Vector3( 0.0f,  -1.0f,  1.0f ), // Front
-				new Vector3(-1.0f,  -1.0f,  0.0f ), // Left
-				new Vector3( 1.0f,  -1.0f,  0.0f ), // Right
-
-                new Vector3( 0.0f,  0.0f,  -1.0f ) //bottom
-            };
-
-            foreach (Vector3 direction in directions)
-            {
-                int neighborX = globalX + (int)direction.x;
-                int neighborY = globalY + (int)direction.y;
-                int neighborZ = globalZ + (int)direction.z;
-
-                Vector3 neighborWorldPosition = new Vector3(neighborX, neighborY, neighborZ);
-
-                if (!map.IsVoxelInMap(neighborWorldPosition))
-                    continue;
-
-                BlockData neighborBlock = map.GetBlockInChunk(neighborWorldPosition, ChunkType.Ground);
-
-                if (neighborBlock != null && neighborBlock.id == BlockConstants.Water)
-                    return true;
-            }
-
-            return false;
-        }
-
-        private void RespawnTree()
-        {
-            isDayTreeSpawn = true;
         }
     }
 }
