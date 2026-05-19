@@ -12,4 +12,9 @@ public class CharacterUiInstaller : Singleton<CharacterUiInstaller>
 
         _presenter = new CharacterPresenter(characterView, model);
     }
+
+    private void OnDestroy()
+    {
+        _presenter?.OnDestroy();
+    }
 }

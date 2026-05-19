@@ -1,248 +1,247 @@
 using BackEnd;
 using Fusion;
+using Fusion.Addons.Physics;
 using Fusion.Sockets;
 using System;
 using System.Collections.Generic;
-using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using UnityEngine.UI;
 using static BackEndMatchManager;
 
-public class NetworkManager : MonoBehaviour, INetworkRunnerCallbacks
+public class NetWorkManager : MonoBehaviour, INetworkRunnerCallbacks
 {
+    public static NetWorkManager Instance;
     public static NetworkRunner runnerInstance;
-    public static NetworkManager Instance;
 
-    public string roomNamePrefix = "Room_";
-
-    public SessionListUiHandler sessionListHandler;
-
-    private StoneLauncher _myLocalLauncher;
-
+    [Header("References")]
     [SerializeField] private NetworkObject stonePrefab;
     [SerializeField] private GameRuleManager ruleManager;
     [SerializeField] private TeamManager teamManager;
 
-    private NetworkSceneManagerDefault sceneManager;
- 
+    private StoneLauncher _myLocalLauncher;
+    private NetworkSceneManagerDefault _sceneManager;
+    private int _localCharacterId;
+    private bool _hasLocalCharacterId;
 
     private void Awake()
     {
         if (Instance == null)
         {
-            transform.SetParent(null);
             Instance = this;
+            transform.SetParent(null);
             DontDestroyOnLoad(gameObject);
         }
         else
         {
             Destroy(gameObject);
+            return;
         }
 
-        runnerInstance = GetComponent<NetworkRunner>();
+     
+    }
+
+    private void Start()
+    {
+        if (runnerInstance == null)
+            runnerInstance = GetComponent<NetworkRunner>() ?? gameObject.AddComponent<NetworkRunner>();
+
+        runnerInstance.ProvideInput = true;
         runnerInstance.AddCallbacks(this);
+
+        var physicsSimulation = runnerInstance.GetComponent<RunnerSimulatePhysics2D>() ?? runnerInstance.gameObject.AddComponent<RunnerSimulatePhysics2D>();
+        physicsSimulation.ClientPhysicsSimulation = ClientPhysicsSimulation.Disabled;
 
         Application.runInBackground = true;
     }
 
-    public async void StartMatchGame(string sessionName, int index, MatchInfo matchInfo)
+    /// <summary>
+    /// ë’¤ë ë§¤ì¹˜ë©”ì´í‚¹ ì™„ë£Œ í›„ í¬í†¤ ê²Œì„ ì„¸ì…˜ì— ì ‘ì†
+    /// </summary>
+    public async void StartMatchGame(string sessionName, MatchInfo matchInfo, int requestedCharacterId = -1)
     {
-        if (sceneManager == null)
+        if (_sceneManager == null)
         {
-            sceneManager = GetComponent<NetworkSceneManagerDefault>();
-            if (sceneManager == null) sceneManager = gameObject.AddComponent<NetworkSceneManagerDefault>();
-        }
-
-        if (runnerInstance == null)
-        {
-            runnerInstance = GetComponent<NetworkRunner>();
-            runnerInstance.AddCallbacks(this);
-            Debug.Log("Runner Instance »ı¼ºµÊ");
+            _sceneManager = GetComponent<NetworkSceneManagerDefault>() ?? gameObject.AddComponent<NetworkSceneManagerDefault>();
         }
 
         string safeSessionName = sessionName.Trim().Replace(" ", "");
-        Debug.Log($"Æ÷Åæ ÁøÀÔ ½Ãµµ - °íÀ¯ ¼¼¼Ç¸í: {safeSessionName}, ¼³Á¤ ÀÎ¿ø: {matchInfo.headCount}");
+        Debug.Log($"[NetworkManager] í¬í†¤ ì§„ì… ì‹œë„ - ì„¸ì…˜ëª…: {safeSessionName}");
 
         BackEndMatchManager.Instance.isConnectMatchServer = false;
 
         await System.Threading.Tasks.Task.Delay(500);
+
+        CharacterDataManager characterManager = await EnsureCharacterDataManagerReady();
+
+        int myCharacterId = requestedCharacterId;
+        if (myCharacterId < 0 && characterManager != null)
+            myCharacterId = characterManager.GetEquippedCharacterId();
+
+        if (myCharacterId < 0)
+        {
+            Debug.LogWarning("[NetworkManager] Equipped character id missing. Falling back to CharacterID 0.");
+            myCharacterId = 0;
+        }
+
+        if (characterManager != null && characterManager.GetMaster(myCharacterId) == null)
+        {
+            Debug.LogWarning($"[NetworkManager] CharacterID {myCharacterId} is not loaded from backend master data.");
+        }
+
+        byte[] connectionToken = BitConverter.GetBytes(myCharacterId);
+        _localCharacterId = myCharacterId;
+        _hasLocalCharacterId = true;
+        Debug.Log($"[NetworkManager] ì—°ê²° í† í° ìƒì„± - CharacterID: {myCharacterId} / Token: {BitConverter.ToString(connectionToken)}");
         var result = await runnerInstance.StartGame(new StartGameArgs()
         {
             GameMode = GameMode.AutoHostOrClient,
             SessionName = safeSessionName,
             PlayerCount = int.Parse(matchInfo.headCount),
             Scene = SceneRef.FromIndex(SceneManager.GetActiveScene().buildIndex),
-            SceneManager = sceneManager
+            SceneManager = _sceneManager,
+            ConnectionToken = connectionToken
         });
 
         if (result.Ok)
         {
-            Debug.Log("Æ÷Åæ ¼¼¼Ç ÁøÀÔ ¼º°ø");
+            Debug.Log("[NetworkManager] í¬í†¤ ì„¸ì…˜ ì§„ì… ì„±ê³µ");
             BackEndMatchManager.Instance.LeaveMatchServer();
         }
         else
         {
-            Debug.LogError($"Æ÷Åæ ÁøÀÔ ½ÇÆĞ: {result.ShutdownReason}");
+            Debug.LogError($"[NetworkManager] í¬í†¤ ì§„ì… ì‹¤íŒ¨: {result.ShutdownReason}");
             BackEndMatchManager.Instance.isConnectMatchServer = true;
-        }
-    }
-
-    public void JoinSelectedSession(SessionInfo info)
-    {
-        //sessionListHandler.OnLookingSessionFound();
-        //StartGame(GameMode.Client, info.Name);
-    }
-
-    public async void RefreshSessionList()
-    {
-        if (runnerInstance.IsRunning)
-        {
-            await runnerInstance.Shutdown();
-        }
-
-        if (runnerInstance == null)
-        {
-            runnerInstance = gameObject.GetComponent<NetworkRunner>() ?? gameObject.AddComponent<NetworkRunner>();
-        }
-
-        //sessionListHandler.OnLookingSessionFound();
-
-    }
-
-    #region INetworkRunnerCallbacks ±âº» ÇÔ¼öµé
-    public void OnObjectExitAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player)
-    {
-    }
-
-    public void OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player)
-    {
-    }
-
-    public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
-    {
-        if (runner.IsServer && player == runner.LocalPlayer)
-        {
-            Debug.Log("Host µé¾î¿È");
-        }
-        else
-        {
-            Debug.Log("Client µé¾î¿È");
-        }
-        if (runner.IsServer)
-        {
-            int teamID = teamManager.AssignTeam(player);
-            Vector3 spawnPos = ruleManager.GetRespawnPosition(teamID);
-
-            NetworkObject playerObj = runner.Spawn(stonePrefab, spawnPos, Quaternion.identity, player);
-            GameManager.instance.stone = playerObj.gameObject;
-            DontDestroyOnLoad(playerObj);
-
-            if (playerObj != null && playerObj.TryGetComponent(out Stone stone))
-            {
-                runner.SetPlayerObject(player, playerObj);
-                stone.SetTeam(teamID);
-                stone.SetReady(true);
-
-                Debug.Log($"[AutoConnect] SetReady ¿Ï·á / player:{player} / ready:{stone.IsReady}");
-
-                ruleManager.RegisterParticipant(stone);
-
-                Debug.Log($"[AutoConnect] ½ºÆù ¿Ï·á / player:{player} / team:{teamID}");
-            }
         }
     }
 
     public void RegisterLocalStone(StoneLauncher launcher)
     {
         _myLocalLauncher = launcher;
-        Debug.Log("[AutoConnect] ·ÎÄÃ ½ºÅæ µî·Ï ¿Ï·á");
+        Debug.Log("[NetworkManager] ë¡œì»¬ ìŠ¤í†¤(Launcher) ë“±ë¡ ì™„ë£Œ");
     }
 
-    public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
-    {
-        if (!runner.IsServer)
-            return;
+    #region INetworkRunnerCallbacks
 
-        if (teamManager != null)
-            teamManager.RemovePlayer(player);
-    }
-
-    public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
+    public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
-    }
+        // ì„œë²„(í˜¸ìŠ¤íŠ¸)ì—ì„œë§Œ ìŠ¤í° ì²˜ë¦¬ë¥¼ ìˆ˜í–‰
+        if (runner.IsServer)
+        {
+            if (runner.TryGetPlayerObject(player, out NetworkObject existingObject) && existingObject != null)
+                return;
 
-    public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason)
-    {
-    }
+            if (stonePrefab == null || ruleManager == null || teamManager == null)
+            {
+                Debug.LogError("[NetworkManager] Spawn dependency missing. Check stonePrefab/ruleManager/teamManager references.");
+                return;
+            }
 
-    public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token)
-    {
-    }
+            int teamID = teamManager.AssignTeam(player);
+            if (teamID < 0)
+                return;
 
-    public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason)
-    {
-    }
+            int targetCharacterIndex = ResolveCharacterIdForPlayer(runner, player);
 
-    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ReadOnlySpan<byte> data)
-    {
-    }
+            Vector3 spawnPos = ruleManager.GetRespawnPosition(teamID);
 
-    public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress)
-    {
+            NetworkObject playerObj = runner.Spawn(stonePrefab, spawnPos, Quaternion.identity, player);
+
+            if (playerObj != null && playerObj.TryGetComponent(out Stone stone))
+            {
+                runner.SetPlayerObject(player, playerObj);
+
+                stone.SetCharacterIndex(targetCharacterIndex);
+                stone.SetTeam(teamID);
+                stone.SetReady(true);
+
+                ruleManager.RegisterParticipant(stone);
+                
+
+                Debug.Log($"[NetworkManager] í”Œë ˆì´ì–´ ìŠ¤í° ì™„ë£Œ: {player} / íŒ€: {teamID}");
+            }
+        }
     }
 
     public void OnInput(NetworkRunner runner, NetworkInput input)
     {
         if (_myLocalLauncher != null)
+        {
             input.Set(_myLocalLauncher.GetLocalInput());
+        }
     }
 
-    public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input)
+    public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
     {
-    }
-
-    public void OnConnectedToServer(NetworkRunner runner)
-    {
+        if (runner.IsServer && teamManager != null)
+        {
+            teamManager.RemovePlayer(player);
+            Debug.Log($"[NetworkManager] í”Œë ˆì´ì–´ í‡´ì¥: {player}");
+        }
     }
 
     public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList)
     {
-        if(sessionListHandler !=null)
-        {
-            sessionListHandler.ClearList();
-
-            if (sessionList.Count == 0)
-            {
-                sessionListHandler.OnNoSessionFound();
-            }
-            else
-            {
-                foreach (SessionInfo session in sessionList)
-                {
-                    sessionListHandler.AddToList(session);
-                }
-            }
-        }
+        
     }
 
-    public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data)
-    {
-    }
+    // ì—ëŸ¬ ë° ìƒíƒœ ë¡œê·¸
+    public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) => Debug.LogWarning($"Shutdown: {shutdownReason}");
+    public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason) => Debug.LogWarning($"Disconnected: {reason}");
+    public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason) => Debug.LogError($"Connect Failed: {reason}");
 
-    public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken)
-    {
-    }
-
-    public void OnSceneLoadDone(NetworkRunner runner)
-    {
-    }
-
-    public void OnSceneLoadStart(NetworkRunner runner)
-    {
-    }
-
-
+    #region Unused Callbacks
+    public void OnConnectedToServer(NetworkRunner runner) { }
+    public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token) { }
+    public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data) { }
+    public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken) { }
+    public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
+    public void OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
+    public void OnObjectExitAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
+    public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress) { }
+    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ArraySegment<byte> data) { }
+    public void OnSceneLoadDone(NetworkRunner runner) { }
+    public void OnSceneLoadStart(NetworkRunner runner) { }
+    public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message) { }
     #endregion
+    #endregion
+
+    private async System.Threading.Tasks.Task<CharacterDataManager> EnsureCharacterDataManagerReady()
+    {
+        CharacterDataManager characterManager = CharacterDataManager.Instance;
+        if (characterManager == null)
+        {
+            GameObject managerObject = new GameObject("CharacterDataManager_Runtime");
+            characterManager = managerObject.AddComponent<CharacterDataManager>();
+            Debug.LogWarning("[NetworkManager] CharacterDataManager missing. Runtime instance created for backend character data.");
+        }
+
+        await characterManager.InitializeDatabaseAsync();
+        return characterManager;
+    }
+
+    private int ResolveCharacterIdForPlayer(NetworkRunner runner, PlayerRef player)
+    {
+        byte[] token = runner.GetPlayerConnectionToken(player);
+        if (token != null && token.Length == 4)
+        {
+            int characterId = BitConverter.ToInt32(token, 0);
+            Debug.Log($"[NetworkManager] Character token resolved / player:{player} / characterId:{characterId}");
+            return characterId;
+        }
+
+        if (_hasLocalCharacterId && player == runner.LocalPlayer)
+        {
+            Debug.LogWarning($"[NetworkManager] Missing character token for local player {player}. Using local CharacterID {_localCharacterId}.");
+            return _localCharacterId;
+        }
+
+        Debug.LogWarning($"[NetworkManager] Missing character token for player {player}. Falling back to CharacterID 0.");
+        return 0;
+    }
 }
 
+public static class NetworkManager
+{
+    public static NetWorkManager Instance => NetWorkManager.Instance;
+    public static NetworkRunner runnerInstance => NetWorkManager.runnerInstance;
+}

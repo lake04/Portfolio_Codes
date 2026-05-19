@@ -14,7 +14,6 @@ public class CharacterInfoUi : MonoBehaviour
 
     private CharacterItemViewData currentData;
     private CharacterUiData currentUiData;
-    private Vector3 originSize;
     private bool isOwned;
 
     private Action OnClicked;
@@ -35,6 +34,7 @@ public class CharacterInfoUi : MonoBehaviour
 
         characterName.text = data.masterData.name;
         characterImage.sprite = uiData.character;
+   
         stage.sprite = uiData.stage;
         capsule.sprite = uiData.capsule;
 
@@ -42,9 +42,13 @@ public class CharacterInfoUi : MonoBehaviour
         stage.gameObject.SetActive(isOwned);
         characterName.gameObject.SetActive(false);
 
-        originSize = transform.localScale;
-    }
+        //Vector2 spritePivot = uiData.character.pivot;
+        //Vector2 spriteSize = uiData.character.rect.size;
+        //Vector2 newPivot = new Vector2(spritePivot.x / spriteSize.x, spritePivot.y / spriteSize.y);
+        //characterImage.rectTransform.pivot = newPivot;
 
+        characterImage.SetNativeSize();
+    }
 
     private void DetailPopup()
     {

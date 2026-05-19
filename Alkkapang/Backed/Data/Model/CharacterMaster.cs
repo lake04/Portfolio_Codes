@@ -4,8 +4,8 @@ using BACKND.Database;
 public class CharacterMaster : BaseModel
 {
     [PrimaryKey]
-    [Column("character_id", DatabaseType.Int32, NotNull = true, DefaultValue = "none")]
-    public int CharacterId { get; set; } = 0;
+    [Column("character_id", DatabaseType.String, NotNull = true, DefaultValue = "none")]
+    public string CharacterId { get; set; } = "none";
 
     [Column("name", DatabaseType.String, NotNull = true, DefaultValue = "none")]
     public string Name { get; set; } = "none";

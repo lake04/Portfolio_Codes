@@ -1,4 +1,4 @@
-using UnityEditor.Media;
+using System.Text.RegularExpressions;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -14,7 +14,7 @@ public class LoginPresenter : PresenterBase<LoginView, LoginModel>
         View.OnClickOpenLogin += OpenLogin;
         View.OnClickLogin += OnLogin;
 
-        View.OnClickGoogleLogin += GogleLogin;
+        View.OnClickGoogleLogin += GoogleLogin;
 
         View.OnClickOpenSignUp += OpenSign;
         View.OnClickCloseSignUp += HideSign;
@@ -24,6 +24,8 @@ public class LoginPresenter : PresenterBase<LoginView, LoginModel>
         View.OnClickUpdatePw += OnUpdatePw;
         View.OnClickFindPw += FindEmail;
         View.OnClickCloseEmail += HideEmail;
+
+        View.OnClickNickName += UpdateNickname;
     }
 
     public override void OnDestroy()
@@ -31,7 +33,7 @@ public class LoginPresenter : PresenterBase<LoginView, LoginModel>
         View.OnClickOpenLogin -= OpenLogin;
         View.OnClickLogin -= OnLogin;
 
-        View.OnClickGoogleLogin -= GogleLogin;
+        View.OnClickGoogleLogin -= GoogleLogin;
 
         View.OnClickOpenSignUp -= OpenSign;
         View.OnClickCloseSignUp -= HideSign;
@@ -41,11 +43,15 @@ public class LoginPresenter : PresenterBase<LoginView, LoginModel>
         View.OnClickUpdatePw -= OnUpdatePw;
         View.OnClickFindPw -= FindEmail;
         View.OnClickCloseEmail -= HideEmail;
-    }
 
-    private void OpenLogin()
+        View.OnClickNickName -= UpdateNickname;
+    }
+   
+
+    private bool IsValidEmail(string email)
     {
-        View.ShowLoginPop();
+        string pattern = @"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$";
+        return Regex.IsMatch(email, pattern);
     }
 
     private void OnLogin()
@@ -53,40 +59,93 @@ public class LoginPresenter : PresenterBase<LoginView, LoginModel>
         string id = View.GetId();
         string pw = View.GetPassword();
 
+        View.ShowIdError(false);
+        View.ShowPwError(false);
+
+        if (string.IsNullOrEmpty(id))
+        {
+            View.ShowIdError(true, "이메일을 입력해주세요.");
+            return;
+        }
+
+        if (!IsValidEmail(id))
+        {
+            View.ShowIdError(true, "잘못된 이메일 형식입니다.");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(pw))
+        {
+            View.ShowPwError(true);
+            return;
+        }
+
         Model.Login(id, pw, (success, msg) =>
         {
             View.ShowMessage(msg);
-
             if (!success)
+            {
+                View.ShowIdError(true, "아이디 또는 비밀번호가 틀렸습니다.");
+                View.ShowPwError(true);
                 return;
-
-            EnterMainScene();
+            }
+            CheckAndEnterMainScene();
         });
     }
 
-
-    private void GogleLogin()
+    private void OpenLogin()
     {
-        Model.GogleLogin();
+        View.ShowLoginPop();
     }
+
+    private void GoogleLogin()
+    {
+        Model.GoogleLogin((success, msg) =>
+        {
+            View.ShowMessage(msg);
+            if (!success) return;
+
+            CheckAndEnterMainScene(); 
+        });
+    }
+
     private void OpenSign()
     {
         View.ShowSignup();
     }
 
+   
     private void OnSign()
     {
         string id = View.GetSignId();
         string pw = View.GetSignPw();
-
         Model.SignUp(id, pw, (success, msg) =>
         {
             View.ShowMessage(msg);
+            if (!success) return;
+            CheckAndEnterMainScene(); 
+        });
+    }
 
-            if (!success)
-                return;
-
-            EnterMainScene();
+    private void CheckAndEnterMainScene()
+    {
+        Model.CheckHasNickname((isSuccess, hasNickname, msg) =>
+        {
+            if (isSuccess)
+            {
+                if (hasNickname)
+                {
+                    EnterMainScene();
+                }
+                else
+                {
+                    View.ShowNickname();
+                }
+            }
+            else
+            {
+                View.ShowMessage("닉네임 검사 실패: " + msg);
+            }
         });
     }
 
@@ -128,6 +187,18 @@ public class LoginPresenter : PresenterBase<LoginView, LoginModel>
             if (!success)
                 return;
 
+            EnterMainScene();
+        });
+    }
+
+    private void UpdateNickname()
+    {
+        string nickname = View.GetNickname();
+        Model.UpdateNickname(nickname, (success, msg) =>
+        {
+            View.ShowMessage(msg);
+            if (!success)
+                return;
             EnterMainScene();
         });
     }

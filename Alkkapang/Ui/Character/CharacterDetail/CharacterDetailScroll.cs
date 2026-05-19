@@ -1,7 +1,6 @@
-using Unity.AppUI.UI;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI; // ScrollRect 참조를 위해 추가
+using UnityEngine.UI;
 
 public class CharacterDetailScroll : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
@@ -48,7 +47,7 @@ public class CharacterDetailScroll : MonoBehaviour, IBeginDragHandler, IDragHand
             }
         }
 
-        if (Mathf.Abs(deltaX) > 5f)
+        if (Mathf.Abs(deltaX) > 18f)
         {
             if (deltaX > 0 && newIndex > 0) newIndex--;
             else if (deltaX < 0 && newIndex < SIZE - 1) newIndex++;

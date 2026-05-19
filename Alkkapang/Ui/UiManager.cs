@@ -1,11 +1,15 @@
 using BackEnd;
 using BackEnd.Tcp;
+using CustomBackEnd.BackendLogin;
+using Cysharp.Threading.Tasks;
 using DG.Tweening;
+using Spine.Unity;
 using System.Collections.Generic;
+using TMPro;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using CustomBackEnd.BackendLogin;
 
 public class UiManager : MonoBehaviour
 {
@@ -24,6 +28,9 @@ public class UiManager : MonoBehaviour
 
     private GameObject prePopup;
     [SerializeField] private GameObject detailUi;
+    [SerializeField] private GameObject loadingPanel;
+    public SkeletonGraphic homeSkeletonhGraphic;
+
 
     [Header("View")]
     [SerializeField] private CharacterDetailView characterDetailView;
@@ -41,15 +48,13 @@ public class UiManager : MonoBehaviour
         }
     }
 
-    private void Update()
-    {
-        if (Input.GetKeyDown(KeyCode.V))
-        {
-            BackendLogin.Instance.Logout();
-            SceneManager.LoadScene("Title");
-        }
-    }
 
+
+    private void Start()
+    {
+        loadingPanel.SetActive(true);
+        LoadDataAndStartGame().Forget();
+    }
 
     public void PushUi(GameObject uiPrefab)
     {
@@ -108,7 +113,22 @@ public class UiManager : MonoBehaviour
         characterDetailView.SetData(masterData, currentUiData);
     }
 
-   
+
+    private async UniTaskVoid LoadDataAndStartGame()
+    {
+        await CharacterDataManager.Instance.InitializeDatabaseAsync();
+
+        await CharacterDataManager.Instance.LoadOrCreateUserData();
+
+        int equippedId = CharacterDataManager.Instance.GetEquippedCharacterId();
+
+        CharacterDataManager.Instance.ChangeCharacterHomeModel(homeSkeletonhGraphic, equippedId);
+        CharacterUiInstaller.Instance._presenter.RefreshCharacterList();
+
+        Debug.Log("모든 데이터 및 캐릭터 로딩 완료!");
+
+        loadingPanel.SetActive(false);
+    }
 
     public void Exit()
     {

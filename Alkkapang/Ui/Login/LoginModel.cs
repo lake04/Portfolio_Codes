@@ -1,9 +1,8 @@
+using LitJson;
 using BackEnd;
 using CustomBackEnd.BackendLogin;
-using System;
-using System.Collections.Generic;
+using System;   
 using UnityEngine;
-using static TheBackend.ToolKit.GoogleLogin.Android;
 
 public class LoginModel : ModelBase
 {
@@ -14,21 +13,20 @@ public class LoginModel : ModelBase
     {
         if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(pw))
         {
-            onResult?.Invoke(false, "ID 또는 PW를 입력해주세요.");
+            onResult?.Invoke(false, "Please enter ID and PW.");
             return;
         }
 
         var bro = BackendLogin.Instance.CustomLogin(id, pw);
-        Debug.Log($"{id}, {pw} 로그인 시도 중...");
+        Debug.Log($"{id}, {pw} login try...");
         if (bro.IsSuccess())
         {
-            onResult?.Invoke(true, "로그인 성공");
-            CharacterDataManager.Instance.InitializeDatabase();
+            onResult?.Invoke(true, "login success");
         }
         else
         {
             string message = bro.GetMessage();
-            onResult?.Invoke(false, "로그인 실패" + message);
+            onResult?.Invoke(false, "login failed: " + message);
         }
     }
 
@@ -89,9 +87,44 @@ public class LoginModel : ModelBase
         }
     }
 
-    public void GogleLogin()
+    public void UpdateNickname(string nickname, Action<bool, string> onResult)
     {
-        BackendLogin.Instance.StartGoogleLogin();
-       
+        var bro = BackendLogin.Instance.UpdateNickname(nickname);
+        if (bro.IsSuccess())
+        {
+            onResult?.Invoke(true, "닉네임 업데이트 성공");
+        }
+        else
+        {
+            onResult?.Invoke(false, "닉네임 업데이트 실패: " + bro.GetMessage());
+        }
+    }
+
+    public void GoogleLogin(Action<bool, string> onResult)
+    {
+        BackendLogin.Instance.StartGoogleLogin(onResult);
+    }
+
+    public void CheckHasNickname(Action<bool, bool, string> onResult)
+    {
+        var bro = Backend.BMember.GetUserInfo();
+        if (bro.IsSuccess())
+        {
+            JsonData json = JsonMapper.ToObject(bro.GetReturnValue());
+            JsonData row = json["row"];
+
+            if (row.Keys.Contains("nickname") && row["nickname"] != null && !string.IsNullOrEmpty(row["nickname"].ToString()))
+            {
+                onResult?.Invoke(true, true, "닉네임 존재함");
+            }
+            else
+            {
+                onResult?.Invoke(true, false, "닉네임 없음");
+            }
+        }
+        else
+        {
+            onResult?.Invoke(false, false, "유저 정보 조회 실패: " + bro.GetMessage());
+        }
     }
 }

@@ -1,20 +1,40 @@
 using BackEnd;
 using BACKND.Database;
 using Cysharp.Threading.Tasks;
+using Spine.Unity;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
 
-public class CharacterDataManager : Singleton<CharacterDataManager>
+public class CharacterDataManager : MonoBehaviour
 {
+    public static CharacterDataManager Instance { get; private set; }
+
     public static Client DBClient;
     private bool _initialized = false;
+    private Task _initializeTask;
 
     private Dictionary<int, CharacterMasterData> masterById = new();
     private Dictionary<string, CharacterMasterData> masterByKey = new();
     private UserData userData = new();
 
     private const string USER_DATA_TABLE = "USER_CHARACTER";
+
+    public List<CharacterSpineAsset> spineAssets = new List<CharacterSpineAsset>();
+    public List<CharacterSpineAsset> ingmaeSpineAssets = new List<CharacterSpineAsset>();
+
+    private void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+            DontDestroyOnLoad(this.gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
 
     public bool IsOwned(int characterId)
     {
@@ -54,21 +74,36 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
         return data;
     }
 
+    public bool IsDataReady => _initialized;
+
     public async void InitializeDatabase()
+    {
+        await InitializeDatabaseAsync();
+    }
+
+    public Task InitializeDatabaseAsync()
+    {
+        if (_initializeTask == null)
+            _initializeTask = InitializeDatabaseInternal();
+
+        return _initializeTask;
+    }
+
+    private async Task InitializeDatabaseInternal()
     {
         if (_initialized) return;
 
         DBClient = new Client("019c2c62-be25-730e-9ff9-ae397976a561");
         await DBClient.Initialize();
 
-        _initialized = true;
         Debug.Log("데이터베이스 초기화 완료");
 
         await LoadMasterCharacter();
         await LoadOrCreateUserData();
+        _initialized = true;
     }
 
-    #region Load
+    #region Load / Create
 
     public async Task LoadMasterCharacter()
     {
@@ -81,11 +116,16 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
         foreach (var c in characters)
         {
             CharacterMasterData data = new CharacterMasterData(c);
+            if (data.characterId < 0)
+            {
+                Debug.LogWarning($"Invalid character_id from backend. Raw:{c.CharacterId} / name:{data.name}");
+                continue;
+            }
 
             masterById[data.characterId] = data;
             masterByKey[data.characterKey] = data;
 
-            Debug.Log($"ID:{data.characterId} / KEY:{data.characterKey} / name:{data.name}");
+            Debug.Log($"ID:{data.characterId} / KEY:{data.characterKey} / name:{data.name} / stats W:{data.weight} S:{data.speed} D:{data.defense} P:{data.power} H:{data.handling}");
         }
 
         Debug.Log($"마스터 캐릭터 로드 완료: {masterById.Count}");
@@ -93,7 +133,14 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
 
     public async Task LoadOrCreateUserData()
     {
-        var bro = Backend.GameData.GetMyData(USER_DATA_TABLE, new Where());
+        var ucs = new UniTaskCompletionSource<BackendReturnObject>();
+
+        SendQueue.Enqueue(Backend.GameData.GetMyData, USER_DATA_TABLE, new BackEnd.Where(), (callback) =>
+        {
+            ucs.TrySetResult(callback);
+        });
+
+        BackendReturnObject bro = await ucs.Task;
 
         if (!bro.IsSuccess())
         {
@@ -112,17 +159,13 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
 
         LitJson.JsonData row = rows[0];
         userData = ParseUserData(row);
-
         Debug.Log($"유저 데이터 로드 완료 / 보유:{userData.ownedCharacterIds.Count} / 장착:{userData.equippedCharacterId}");
     }
 
     private async Task CreateDefaultUserData()
     {
         userData = new UserData();
-
-        // 기본 지급 캐릭터 ID
-        int defaultCharacterId = 1;
-
+        int defaultCharacterId = 10;
         userData.ownedCharacterIds.Add(defaultCharacterId);
         userData.equippedCharacterId = defaultCharacterId;
 
@@ -130,19 +173,34 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
         param.Add("ownedCharacterIds", userData.ownedCharacterIds);
         param.Add("equippedCharacterId", userData.equippedCharacterId);
 
-        var bro = Backend.GameData.Insert(USER_DATA_TABLE, param);
+        var ucs = new UniTaskCompletionSource<BackendReturnObject>();
+
+        SendQueue.Enqueue(Backend.GameData.Insert, USER_DATA_TABLE, param, (callback) =>
+        {
+            ucs.TrySetResult(callback);
+        });
+
+        BackendReturnObject bro = await ucs.Task;
 
         if (bro.IsSuccess())
+        {
+            userData.inDate = bro.GetInDate();
             Debug.Log("기본 유저 데이터 생성 완료");
+        }
         else
+        {
             Debug.LogError($"기본 유저 데이터 생성 실패 : {bro}");
-
-        await UniTask.CompletedTask;
+        }
     }
+
+    
 
     private UserData ParseUserData(LitJson.JsonData row)
     {
         UserData data = new UserData();
+
+        if (row.ContainsKey("inDate"))
+            data.inDate = row["inDate"].ToString();
 
         if (row.ContainsKey("equippedCharacterId"))
             data.equippedCharacterId = int.Parse(row["equippedCharacterId"].ToString());
@@ -161,16 +219,22 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
     #endregion
 
     #region Save
-
-    public void SaveUserData()
+    public async Task SaveUserDataAsync()
     {
-        Where where = new Where();
+        if (userData == null || string.IsNullOrEmpty(userData.inDate)) return;
 
         Param param = new Param();
         param.Add("ownedCharacterIds", userData.ownedCharacterIds);
         param.Add("equippedCharacterId", userData.equippedCharacterId);
 
-        var bro = Backend.GameData.Update(USER_DATA_TABLE, where, param);
+        var ucs = new UniTaskCompletionSource<BackendReturnObject>();
+
+        SendQueue.Enqueue(Backend.GameData.UpdateV2, USER_DATA_TABLE, userData.inDate, Backend.UserInDate, param, (callback) =>
+        {
+            ucs.TrySetResult(callback);
+        });
+
+        BackendReturnObject bro = await ucs.Task;
 
         if (bro.IsSuccess())
             Debug.Log("유저 데이터 저장 완료");
@@ -182,7 +246,7 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
 
     #region Character Logic
 
-    public bool AddCharacterById(int characterId)
+    public async Task<bool> AddCharacterByIdAsync(int characterId)
     {
         if (masterById.ContainsKey(characterId) == false)
         {
@@ -197,13 +261,13 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
         }
 
         userData.ownedCharacterIds.Add(characterId);
-        SaveUserData();
+        await SaveUserDataAsync();
 
         Debug.Log($"캐릭터 획득 완료 : {characterId}");
         return true;
     }
 
-    public bool AddCharacterByKey(string characterKey)
+    public async Task<bool> AddCharacterByKeyAsync(string characterKey)
     {
         if (masterByKey.TryGetValue(characterKey, out var data) == false)
         {
@@ -211,10 +275,10 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
             return false;
         }
 
-        return AddCharacterById(data.characterId);
+        return await AddCharacterByIdAsync(data.characterId);
     }
 
-    public bool EquipCharacterById(int characterId)
+    public async Task<bool> EquipCharacterByIdAsync(int characterId)
     {
         if (masterById.ContainsKey(characterId) == false)
         {
@@ -235,13 +299,13 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
         }
 
         userData.equippedCharacterId = characterId;
-        SaveUserData();
+        await SaveUserDataAsync();
 
         Debug.Log($"캐릭터 장착 완료 : {characterId}");
         return true;
     }
 
-    public bool EquipCharacterByKey(string characterKey)
+    public async Task<bool> EquipCharacterByKeyAsync(string characterKey)
     {
         if (masterByKey.TryGetValue(characterKey, out var data) == false)
         {
@@ -249,7 +313,7 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
             return false;
         }
 
-        return EquipCharacterById(data.characterId);
+        return await EquipCharacterByIdAsync(data.characterId);
     }
 
     #endregion
@@ -269,4 +333,77 @@ public class CharacterDataManager : Singleton<CharacterDataManager>
         var master = GetMaster(GetEquippedCharacterId());
         return master != null ? master.characterKey : string.Empty;
     }
+
+    #region Spine
+    public void ChangeCharacterHomeModel(SkeletonGraphic targetGraphic, int characterId)
+    {
+        var targetAsset = spineAssets.Find(a => a.characterId == characterId);
+        if (targetAsset != null)
+        {
+            targetGraphic.Clear();
+
+            targetGraphic.skeletonDataAsset = targetAsset.dataAsset;
+            targetGraphic.initialSkinName = "";
+            targetGraphic.startingAnimation = "";
+
+            targetGraphic.Initialize(true);
+
+            targetGraphic.material = targetAsset.dataAsset.atlasAssets[0].PrimaryMaterial;
+            targetGraphic.OverrideTexture = null;
+
+            string targetSkinName = targetAsset.defaultSkinName;
+            var foundSkin = targetGraphic.Skeleton.Data.FindSkin(targetSkinName);
+
+            if (foundSkin != null)
+            {
+                targetGraphic.Skeleton.SetSkin(foundSkin);
+            }
+            else
+            {
+                Debug.LogWarning($"[스킨 없음] '{targetSkinName}' 스킨이 없어 강제로 default 스킨을 적용합니다.");
+                targetGraphic.Skeleton.SetSkin("default");
+            }
+
+            targetGraphic.Skeleton.SetSlotsToSetupPose();
+            string targetAnimName = targetAsset.defaultAnimationName;
+            var foundAnim = targetGraphic.Skeleton.Data.FindAnimation(targetAnimName);
+
+            if (foundAnim != null)
+            {
+                targetGraphic.AnimationState.SetAnimation(0, foundAnim, true);
+            }
+            else
+            {
+                if (targetGraphic.Skeleton.Data.Animations.Count > 0)
+                {
+                    var fallbackAnim = targetGraphic.Skeleton.Data.Animations.Items[0];
+                    Debug.LogWarning($"[애니메이션 없음] '{targetAnimName}'을 찾을 수 없어 강제로 '{fallbackAnim.Name}'(을)를 재생합니다!");
+                    targetGraphic.AnimationState.SetAnimation(0, fallbackAnim, true);
+                }
+                else
+                {
+                    Debug.LogError("이 스파인 에셋에는 애니메이션이 아예 없습니다!");
+                }
+            }
+
+            Debug.Log($"캐릭터 모델 변경 완료 : {characterId}");
+        }
+        else
+        {
+            Debug.LogWarning($"스파인 에셋이 없는 캐릭터 ID : {characterId}");
+        }
+    }
+
+    public CharacterSpineAsset ChangeCharacterIngameModel(int characterId)
+    {
+        var targetAsset = ingmaeSpineAssets.Find(a => a.characterId == characterId);
+        return targetAsset;
+    }
+
+    public CharacterSpineAsset GetCharacterSpineAsset(int characterId)
+    {
+        var targetAsset = spineAssets.Find(a => a.characterId == characterId);
+        return targetAsset;
+    }
+    #endregion
 }

@@ -1,4 +1,3 @@
-using Unity.VisualScripting;
 using UnityEngine;
 
 public class CharacterDetailPresenter : PresenterBase<CharacterDetailView, CharacterDetailModel>

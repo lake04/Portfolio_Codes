@@ -1,13 +1,20 @@
 using System;
 using TMPro;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 public class CharacterDetailView : ViewBase
 {
+    [Header("Info")]
     [SerializeField] private Image characterImage;
     [SerializeField] private TMP_Text characterNameText;
+    [SerializeField] private TMP_Text characterRarityText;
+    [SerializeField] private Image characterRarityImage;
+
+    [SerializeField] private Sprite[] rarityImages;
+    [SerializeField] private TMP_Text characterDescriptionText;
+
+    [Header("Stat")]
     [SerializeField] private TMP_Text weightStatText;
     [SerializeField] private TMP_Text speedStatText;
     [SerializeField] private TMP_Text defenseStatText;
@@ -53,6 +60,33 @@ public class CharacterDetailView : ViewBase
     {
         characterImage.sprite = uiData.character;
         characterNameText.text = data.name;
+
+
+        switch(data.rarity)
+        {
+            case 1:
+                characterRarityText.text = "ÀÏ¹Ý";
+                break;
+            case 2:
+                characterRarityText.text = "Èñ±Í";
+                break;
+            case 3:
+                characterRarityText.text = "¿µ¿õ";
+                break;
+            case 4:
+                characterRarityText.text = "Àü¼³";
+                break;
+            case 5:
+                characterRarityText.text = "¾Ë±îÆÎ";
+                break;
+            default:
+                break;
+        }
+
+        characterRarityImage.sprite = rarityImages[data.rarity - 1];
+        characterImage.preserveAspect = true;
+
+        characterDescriptionText.text = uiData.desc;
 
         weightStatText.text =   data.weight.ToString();
         speedStatText.text  =   data.speed.ToString();

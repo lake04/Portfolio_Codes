@@ -28,6 +28,8 @@
                 }
             }
 
+            private Action<bool, string> _onGoogleLoginResult;
+
             public BackendReturnObject CustomSignUp(string email, string pw)
             {
                 Debug.Log("회원가입 요청 중");
@@ -56,20 +58,11 @@
                     return Backend.BMember.CustomLogin(id, pw);
             }
 
-            public void UpdateNickname(string nickName)
+            public BackendReturnObject UpdateNickname(string nickName)
             {
                 Debug.Log("닉네임 변경 요청");
 
-                var bro = Backend.BMember.UpdateNickname(nickName);
-
-                if (bro.IsSuccess())
-                {
-                    Debug.Log("닉네임 변경에 성공했습니다 : " + bro);
-                }
-                else
-                {
-                    Debug.LogError("닉네임 변경에 실패했습니다 : " + bro);
-                }
+                return Backend.BMember.UpdateNickname(nickName);
 
             }
 
@@ -101,23 +94,32 @@
              
             }
 
-            public void StartGoogleLogin()
-            {
-                TheBackend.ToolKit.GoogleLogin.Android.GoogleLogin(GoogleLoginCallback);
-            }
+        public void StartGoogleLogin(Action<bool, string> onResult)
+        {
+            _onGoogleLoginResult = onResult;
+            TheBackend.ToolKit.GoogleLogin.Android.GoogleLogin(GoogleLoginCallback);
+        }
 
         public void GoogleLoginCallback(bool isSuccess, string errorMessage, string token)
+        {
+            if (isSuccess == false)
             {
-                if (isSuccess == false)
-                {
-                    Debug.LogError(errorMessage);
-                    return;
-                }
+                _onGoogleLoginResult?.Invoke(false, errorMessage);
+                return;
+            }
 
-                Debug.Log("구글 토큰 : " + token);
-                var bro = Backend.BMember.AuthorizeFederation(token, FederationType.Google);
-                Debug.Log("페데레이션 로그인 결과 : " + bro);
+            Debug.Log("구글 토큰 발급 성공 : " + token);
+            var bro = Backend.BMember.AuthorizeFederation(token, FederationType.Google, "GPGS로 가입함");
+
+            if (bro.IsSuccess())
+            {
+                _onGoogleLoginResult?.Invoke(true, "구글 로그인 성공");
+            }
+            else
+            {
+                _onGoogleLoginResult?.Invoke(false, "페더레이션 로그인/가입 에러 : " + bro.GetMessage());
             }
         }
 
+    }
     }

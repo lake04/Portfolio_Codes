@@ -4,6 +4,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+
 public partial class BackEndMatchManager : MonoBehaviour {
     public class MatchInfo
     {
@@ -35,9 +37,12 @@ public partial class BackEndMatchManager : MonoBehaviour {
 
     public bool isConnectMatchServer = false;
     private bool isConnectInGameServer = false;
-    private int curMatchIndex = 0;
+    [SerializeField] private GameRuleType currentRuleType = GameRuleType.StockRespawn;
+    private int currentRuleIndex = 0;
 
     public event Action<bool> OnMatchingStateChanged;
+
+    private readonly WaitForSeconds photonJoinDelay = new WaitForSeconds(1.5f);
 
     private void Awake()
     {
@@ -67,17 +72,25 @@ public partial class BackEndMatchManager : MonoBehaviour {
                 {
                     Debug.Log("방 생성 성공 -> 자동으로 매칭 신청을 시작합니다.");
                     OnMatchingStateChanged?.Invoke(true);
-                    RequestMatchMaking(curMatchIndex);
+                    RequestMatchMaking((int)currentRuleType);
                 }
             };
     }
 
     void Update()
     {
-            if (isConnectMatchServer)
-            {
-                Backend.Match.Poll();
-            }
+        if (isConnectMatchServer)
+        {
+            Backend.Match.Poll();
+        }
+        SendQueue.Poll();
+    }
+
+    public void SelectRule(int index)
+    {
+        currentRuleType = (GameRuleType)index;
+        UiManager.instance.CloseTopUi();
+        Debug.Log(currentRuleType.ToString());
     }
 
     // 매칭 카드 리스트를 서버에서 불러오는 함수
@@ -96,34 +109,29 @@ public partial class BackEndMatchManager : MonoBehaviour {
 
             Debug.Log("매칭 카드 리스트 불러오기 성공");
 
-            foreach (LitJson.JsonData row in callback.Rows())
+            var rows = callback.Rows();
+            for(int i = 0; i < rows.Count; i++)
             {
-                MatchInfo info = new MatchInfo();
-                info.title = row["matchTitle"]["S"].ToString();
-                info.inDate = row["inDate"]["S"].ToString();
-                info.headCount = row["matchHeadCount"]["N"].ToString();
-                info.isSandBoxEnable = row["enable_sandbox"]["BOOL"].ToString().ToLower() == "true";
+                LitJson.JsonData row = rows[i];
 
-                // matchType (MMR, Point, Random 등) 파싱
+                MatchInfo info = new MatchInfo()
+                {
+                    title = row["matchTitle"]["S"].ToString(),
+                    inDate = row["inDate"]["S"].ToString(),
+                    headCount = row["matchHeadCount"]["N"].ToString(),
+                    isSandBoxEnable = row["enable_sandbox"]["BOOL"].ToString().ToLower() == "true"
+                };
+
                 string typeStr = row["matchType"]["S"].ToString().ToLower();
-                foreach (MatchType type in System.Enum.GetValues(typeof(MatchType)))
+                if (Enum.TryParse(typeStr, true, out MatchType parsedType))
                 {
-                    if (type.ToString().ToLower().Equals(typeStr))
-                    {
-                        info.matchType = type;
-                        break;
-                    }
+                    info.matchType = parsedType;
                 }
-
-                // matchModeType (OneOnOne, TeamOnTeam 등) 파싱
-                string modeStr = row["matchModeType"]["S"].ToString().ToLower();
-                foreach (MatchModeType mode in System.Enum.GetValues(typeof(MatchModeType)))
+               
+                string modeTypeStr = row["matchModeType"]["S"].ToString().ToLower();
+                if (Enum.TryParse(modeTypeStr, true, out MatchModeType parsedModeType))
                 {
-                    if (mode.ToString().ToLower().Equals(modeStr))
-                    {
-                        info.matchModeType = mode;
-                        break;
-                    }
+                    info.matchModeType = parsedModeType;
                 }
 
                 matchInfos.Add(info);
@@ -204,13 +212,9 @@ public partial class BackEndMatchManager : MonoBehaviour {
             }
             // 변수 초기화
             isConnectInGameServer = false;
-            curMatchIndex = index;
-            Backend.Match.RequestMatchMaking(matchInfos[index].matchType, matchInfos[index].matchModeType, matchInfos[index].inDate);
-            if (isConnectInGameServer)
-            {
-                Backend.Match.LeaveGameServer(); //인게임 서버 접속되어 있을 경우를 대비해 인게임 서버 리브 호출
-            }
-            isConnectInGameServer = false;
+            currentRuleIndex = index;
+
+            Backend.Match.LeaveGameServer(); //인게임 서버 접속되어 있을 경우를 대비해 인게임 서버 리브 호출
             Backend.Match.RequestMatchMaking(matchInfos[index].matchType, matchInfos[index].matchModeType, matchInfos[index].inDate);
         }
 
@@ -320,19 +324,19 @@ public partial class BackEndMatchManager : MonoBehaviour {
     private void ProcessMatchSuccess(MatchMakingResponseEventArgs args)
     {
         string fusionSessionName = args.RoomInfo.m_inGameRoomToken;
-        MatchInfo matchInfo = matchInfos[curMatchIndex];
+        MatchInfo matchInfo = matchInfos[(int)currentRuleType];
 
         StartCoroutine(JoinPhotonDelayed(fusionSessionName, matchInfo));
     }
 
     private IEnumerator JoinPhotonDelayed(string sessionName, MatchInfo info)
-        {
+    {
             Debug.Log("뒤끝 통신 일시 정지 및 포톤 진입 준비...");
 
             isConnectMatchServer = false;
+            SceneManager.LoadScene("Ingame");
+            yield return photonJoinDelay;
 
-            yield return new WaitForSeconds(1.5f);
-
-            NetworkManager.Instance.StartMatchGame(sessionName, curMatchIndex, info);
-        }
+            NetworkManager.Instance.StartMatchGame(sessionName, info);
+    }
 }

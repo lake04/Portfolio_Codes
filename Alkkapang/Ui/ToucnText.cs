@@ -48,20 +48,29 @@ public class ToucnText : MonoBehaviour
         if (Input.anyKeyDown && isStart)
         {
             gameObject.SetActive(false);
-            ShowButton();
-            //BackendLogin.Instance.BackendTokenLogin((bool result, string error) =>
-            //{ 
-            //    if (result)
-            //    {
-            //        Debug.Log("토큰 로그인 성공 씬 이둥");
-            //        SceneManager.LoadScene("MainScene");
-            //    }
-            //    else
-            //    {
-            //        Debug.LogWarning($"토큰 로그인 실패 : {error}");
-            //        ShowButton();
-            //    }
-            //});
+            //ShowButton();
+            BackendLogin.Instance.BackendTokenLogin((bool result, string error) =>
+            {
+                if (result)
+                {
+                    Debug.Log("토큰 로그인 성공 씬 이둥");
+                    SceneManager.LoadScene("MainScene");
+                    BackEndMatchManager.Instance.GetMatchListFromServer((ok) =>
+                    {
+                        if (!ok)
+                        {
+                            return;
+                        }
+
+                        SceneManager.LoadScene("MainScene");
+                    });
+                }
+                else
+                {
+                    Debug.LogWarning($"토큰 로그인 실패 : {error}");
+                    ShowButton();
+                }
+            });
         }
     }
 

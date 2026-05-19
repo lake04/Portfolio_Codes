@@ -1,3 +1,4 @@
+using BackEnd;
 using System;
 using TMPro;
 using UnityEngine;
@@ -10,6 +11,9 @@ public class LoginView : ViewBase
     [SerializeField] private TMP_InputField idInputField;
     [SerializeField] private TMP_InputField loginPwInputField;
     [SerializeField] private Button loginSelectButton;
+    [SerializeField] private Image idFailImage;
+    [SerializeField] private Image pwFailImage;
+    [SerializeField] private TMP_Text idFailText;
 
     [Header("SignUp")]
     [SerializeField] private GameObject signOb;
@@ -18,10 +22,12 @@ public class LoginView : ViewBase
     [SerializeField] private Button signupOpenButton;
     [SerializeField] private Button signupButton;
     [SerializeField] private Button signupCloseButton;
+    [SerializeField] private Image checkPwFailImage;
+    
 
     [Header("Google Login")]
-    [SerializeField] private GameObject googleLogin;
     [SerializeField] private Button googleLoginButton;
+    [SerializeField] private Button GoogleSignButton;
 
     [Header("FindPw")]
     [SerializeField] private GameObject findOb;
@@ -35,6 +41,12 @@ public class LoginView : ViewBase
     [SerializeField] private Button updatePwButton;
     [SerializeField] private Button closeFindEmailButton;
 
+    [Header("Nickname")]
+    [SerializeField ] private GameObject nicknameOb;
+    [SerializeField] private TMP_InputField nicknameInputField;
+    [SerializeField] private Button updateNicknameButton;
+
+    [Header("Event")]
     public Action OnClickOpenLogin;
     public Action OnClickLogin;
 
@@ -49,6 +61,8 @@ public class LoginView : ViewBase
     public Action OnClickCloseEmail;
     public Action OnClickCloseFindEmail;
 
+    public Action OnClickNickName;
+
     #region 인풋필드 텍스트 읽기
     public string GetId() => idInputField.text;
     public string GetPassword() => loginPwInputField.text;
@@ -59,6 +73,7 @@ public class LoginView : ViewBase
     public string GetFindEmail() => findEmailInputField.text;
     public string GetTempPw() => temporaryPwInputField.text;
     public string GetNewPw() => newPwInputField.text;
+    public string GetNickname() => nicknameInputField.text;
     #endregion
 
     private LoginPresenter _presenter;
@@ -75,6 +90,7 @@ public class LoginView : ViewBase
         signupOpenButton.onClick.AddListener(() => OnClickOpenSignUp?.Invoke());
 
         googleLoginButton.onClick.AddListener(() => OnClickGoogleLogin?.Invoke());
+        GoogleSignButton.onClick.AddListener(() => OnClickGoogleLogin?.Invoke());
 
         signupButton.onClick.AddListener(() => OnClickSignUp?.Invoke());
         signupCloseButton.onClick.AddListener(() => OnClickCloseSignUp?.Invoke());
@@ -84,6 +100,8 @@ public class LoginView : ViewBase
         updatePwButton.onClick.AddListener(() => OnClickUpdatePw?.Invoke());
         closeEmailButton.onClick.AddListener(() => OnClickCloseEmail?.Invoke());
         closeFindEmailButton.onClick.AddListener(() => OnClickCloseFindEmail?.Invoke());
+
+        updateNicknameButton.onClick.AddListener(() => OnClickNickName?.Invoke());
     }
 
     private void OnDestroy()
@@ -139,5 +157,32 @@ public class LoginView : ViewBase
     {
         signOb.SetActive(false);
         loginOb.SetActive(true);
+    }
+
+    public void ShowNickname()
+    {
+        signOb.SetActive(false);
+        loginOb.SetActive(false);
+        nicknameOb.SetActive(true);
+    }
+
+    public void ShowIdError(bool show, string msg = "")
+    {
+        if (idFailImage != null) idFailImage.gameObject.SetActive(show);
+
+        if (idFailText != null)
+        {
+            idFailText.gameObject.SetActive(show);
+
+            if (show && !string.IsNullOrEmpty(msg))
+            {
+                idFailText.text = msg;
+            }
+        }
+    }
+
+    public void ShowPwError(bool show)
+    {
+        if (pwFailImage != null) pwFailImage.gameObject.SetActive(show);
     }
 }

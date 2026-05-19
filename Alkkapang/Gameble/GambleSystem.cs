@@ -1,167 +1,228 @@
-using BackEnd;
-using System.Collections;
-using System.Collections.Generic;
-using TMPro;
-using UnityEngine;
-using UnityEngine.UI;
+    using BackEnd;
+    using Cysharp.Threading.Tasks;
+    using System.Collections;
+    using System.Collections.Generic;
+    using System.Threading.Tasks;
+    using TMPro;
+    using UnityEngine;
+    using UnityEngine.UI;
 
-public class GambleSystem : MonoBehaviour
-{
-    [SerializeField] private GameObject gamblePopup;
-    [SerializeField] private Image curCharacterImgae;
-    [SerializeField] private TMP_Text curCharacterText;
-
-    [SerializeField] private int curGamebleCount = 0;
-    private bool isTanGameble = false;
-    [SerializeField] private Sprite[] characterSprites;
-    List<ProbabilityCharacter> characterList = new List<ProbabilityCharacter>(10);
-
-    [Header("Skip Settings")]
-    [SerializeField] private GameObject tanGamble;
-    [SerializeField] private Image[] characterimages = new Image[10];
-    [SerializeField] private bool isSkilpPopup = false;
-
-    private void Update()
+    public class GambleSystem : MonoBehaviour
     {
-        if(isTanGameble)
-        {
-            gamblePopup.SetActive(true);
+        [SerializeField] private GameObject gamblePopup;
+        [SerializeField] private Image curCharacterImage;
+        [SerializeField] private TMP_Text curCharacterText;
 
-            if (Input.GetMouseButtonDown(0))
+        [SerializeField] private int curGambleCount = 0;
+        private bool isTenGamble = false;
+        private bool isSingleGamble = false;
+        [SerializeField] private Sprite[] characterSprites;
+        List<ProbabilityCharacter> characterList = new List<ProbabilityCharacter>(10);
+
+        [Header("Skip Settings")]
+        [SerializeField] private GameObject tenGamblePopup;
+        [SerializeField] private Image[] characterImages = new Image[10];
+        [SerializeField] private bool isSkipPopup = false;
+        [SerializeField] private GameObject skipButton;
+
+        private bool isGambling = false;
+
+        private void Update()
+        {
+            if (isTenGamble && Input.GetMouseButtonDown(0))
             {
-                if(curGamebleCount >9)
+                ShowNextCharacter();
+            }
+            else if (isSingleGamble && Input.GetMouseButtonDown(0))
+            {
+                isSingleGamble = false;
+                gamblePopup.SetActive(false);
+                StartCoroutine(GamebleDelay());
+            }
+
+            if (isSkipPopup && Input.anyKeyDown)
+            {
+                isSkipPopup = false;
+                tenGamblePopup.SetActive(false);
+                isGambling = false;
+                StartCoroutine(GamebleDelay());
+            }
+        }
+
+        /// <summary>
+        /// 1È¸ »Ì±â
+        /// </summary>
+        public async void Gamble()
+        {
+            if (isGambling) return;
+            isGambling = true;
+
+            var ucs = new UniTaskCompletionSource<BackendReturnObject>();
+
+            SendQueue.Enqueue(Backend.Probability.GetProbability, "18796", (callback) =>
+            {
+                ucs.TrySetResult(callback);
+            });
+
+            BackendReturnObject bro = await ucs.Task;
+
+            if (bro.IsSuccess())
+            {
+                StartCoroutine(SingleGambleDelqy());
+                isTenGamble = false;
+                gamblePopup.SetActive(true);
+                if (skipButton != null) skipButton.SetActive(false);
+
+                LitJson.JsonData json = bro.GetFlattenJSON();
+                ProbabilityCharacter item = new ProbabilityCharacter();
+
+                item.itemID = json["elements"]["character_ID"].ToString();
+                item.characterKey = json["elements"]["character_Key"].ToString();
+                item.itemName = json["elements"]["character_Name"].ToString();
+                item.rating = json["elements"]["rating"].ToString();
+                item.num = int.Parse(json["elements"]["num"].ToString());
+
+                await CharacterDataManager.Instance.AddCharacterByKeyAsync(item.characterKey);
+                curCharacterImage.preserveAspect = true;
+                curCharacterImage.sprite = characterSprites[item.num - 1];
+                curCharacterText.text = $"{item.itemName}";
+                CharacterUiInstaller.Instance._presenter.RefreshCharacterList();
+            }
+            else
+            {
+                Debug.LogError("´ÜÀÏ »Ì±â ½ÇÆÐ: " + bro.ToString());
+                isGambling = false;
+            }
+        }
+
+        /// <summary>
+        /// 10¿¬¼Ó »Ì±â
+        /// </summary>
+        public async void TenGamble()
+        {
+            if (isGambling) return;
+            isGambling = true;
+            var bro = Backend.Probability.GetProbabilitys("18796", 10);
+
+            if (bro.IsSuccess())
+            {
+                curGambleCount = 0;
+                characterList.Clear();
+                StartCoroutine(TanGambleDelqy());
+                isSingleGamble = false;
+                isSkipPopup = false;
+
+                gamblePopup.SetActive(true);
+
+                if (skipButton != null) skipButton.SetActive(true);
+
+                LitJson.JsonData json = bro.GetFlattenJSON()["elements"];
+
+                for (int i = 0; i < json.Count; i++)
                 {
-                    isTanGameble = false;
-                    characterList.Clear();
-                    gamblePopup.SetActive(false);
+                    ProbabilityCharacter character = new ProbabilityCharacter();
 
-                    curGamebleCount = 0;
-                    return;
+                    character.itemID = json[i]["character_ID"].ToString();
+                    character.characterKey = json[i]["character_Key"].ToString();
+                    character.itemName = json[i]["character_Name"].ToString();
+                    character.rating = json[i]["rating"].ToString();
+                    character.num = int.Parse(json[i]["num"].ToString());
+
+                    await CharacterDataManager.Instance.AddCharacterByKeyAsync(character.characterKey);
+                    characterList.Add(character);
                 }
-                ProbabilityCharacter character = characterList[curGamebleCount];                                                    
-                curCharacterImgae.sprite = characterSprites[character.num - 1];
-                curCharacterText.text = $"{character.itemName}";
-                curGamebleCount++;
 
+                CharacterUiInstaller.Instance._presenter.RefreshCharacterList();
+
+                ShowNextCharacter();
             }
-        }
-        if(isSkilpPopup)
-        {
-            if(Input.anyKeyDown)
+            else
             {
-                isSkilpPopup = false;
-                tanGamble.SetActive(false);
+                Debug.LogError("10¿¬¼Ó »Ì±â ½ÇÆÐ: " + bro.ToString());
+                isGambling =false;
             }
         }
-    }
 
-    public void Gameble()
-    {
-        var bro = Backend.Probability.GetProbability("18796");
-
-        if (bro.IsSuccess())
+        /// <summary>
+        /// 10¿¬»Ì Å¬¸¯ ¿¬Ãâ ·ÎÁ÷ 
+        /// </summary>
+        private void ShowNextCharacter()
         {
-            var selectedItem = bro.GetReturnValue();
-            Debug.Log($"»ÌÈù Ä³¸¯ÅÍ: {selectedItem}");
-
-            LitJson.JsonData json = bro.GetFlattenJSON();
-
-            ProbabilityCharacter item = new ProbabilityCharacter();
-
-            item.itemID = json["elements"]["character_ID"].ToString();
-            item.characterKey = json["elements"]["character_Key"].ToString();
-            item.itemName = json["elements"]["character_Name"].ToString();
-            item.rating = json["elements"]["rating"].ToString();
-            item.num = int.Parse(json["elements"]["num"].ToString());
-
-            CharacterDataManager.Instance.AddCharacterByKey(item.characterKey);
-            curCharacterImgae.sprite = characterSprites[item.num - 1];
-        }
-        else
-        {
-            Debug.Log("»Ì±â ½ÇÆÐ");
-        }
-    }
-
-    public void TanGameble()
-    {
-        isTanGameble = true;
-        isSkilpPopup = false;
-        curGamebleCount = 0;
-        characterList.Clear();
-
-        string selectedProbabilityFileId = "18796";
-
-        var bro = Backend.Probability.GetProbabilitys(selectedProbabilityFileId, 10);
-
-        if (bro.IsSuccess())
-        {
-            LitJson.JsonData json = bro.GetFlattenJSON()["elements"];
-
-            for (int i = 0; i < json.Count; i++)
+            if (curGambleCount >= characterList.Count)
             {
-                ProbabilityCharacter character = new ProbabilityCharacter();
-
-                character.itemID = json[i]["character_ID"].ToString();
-                character.characterKey = json[i]["character_Key"].ToString();
-                character.itemName = json[i]["character_Name"].ToString();
-                character.rating = json[i]["rating"].ToString();
-                character.num = int.Parse(json[i]["num"].ToString());
-
-                CharacterDataManager.Instance.AddCharacterByKey(character.characterKey);
-                characterList.Add(character);
+                isTenGamble = false;
+                gamblePopup.SetActive(false);
+                curGambleCount = 0;
+                isGambling = false;
+                return;
             }
-        }
-        else
-        {
-            Debug.LogError(bro.ToString());
-        }
+            curCharacterImage.preserveAspect = true;
+            ProbabilityCharacter character = characterList[curGambleCount];
+            curCharacterImage.sprite = characterSprites[character.num - 1];
+            curCharacterText.text = $"{character.itemName}";
 
-
-        foreach (var character in characterList)
-        {
-            Debug.Log(character.ToString());
+            curGambleCount++;
         }
 
-    }
-
-    public void Skip()
-    {
-        StartCoroutine(SkipDelay());
-        gamblePopup.SetActive(false);
-        tanGamble.SetActive(true);
-        isTanGameble = false;
-
-        foreach (var character in characterList)
+        /// <summary>
+        /// 10¿¬»Ì ½ºÅµ ¹öÆ°
+        /// </summary>
+        public void Skip()
         {
-            if(curGamebleCount > 9)
+            isTenGamble = false;
+            gamblePopup.SetActive(false);
+            tenGamblePopup.SetActive(true);
+            isGambling = false;
+            StartCoroutine(SkipDelay());
+
+            for (int i = 0; i < characterList.Count; i++)
             {
-                break;
+                if (i >= characterImages.Length)
+                {
+                    isGambling = false;
+                    break;
+                }
+                 characterImages[i].preserveAspect = true;
+                 characterImages[i].sprite = characterSprites[characterList[i].num - 1];
             }
-            characterimages[curGamebleCount].sprite = characterSprites[character.num - 1];
-            curGamebleCount++;
         }
-    }
 
-    private IEnumerator SkipDelay()
-    {
-        yield return new WaitForSeconds(0.3f);
-        isSkilpPopup = true;
-
-    }
-
-    public void SkipPopup()
-    {
-        if(tanGamble.activeSelf)
+        private IEnumerator SkipDelay()
         {
-            StopAllCoroutines();
-            tanGamble.SetActive(false);
-            isSkilpPopup = false;
+            yield return new WaitForSeconds(0.3f);
+            isSkipPopup = true;
         }
-        else
+
+        public void SkipPopup()
         {
-            tanGamble.SetActive(true);
+            if (tenGamblePopup.activeSelf)
+            {
+                StopAllCoroutines();
+                tenGamblePopup.SetActive(false);
+                isSkipPopup = false;
+                isGambling = false;
+            }
+            else
+            {
+                tenGamblePopup.SetActive(true);
+            }
         }
-    }
+
+        private IEnumerator GamebleDelay()
+        {
+            yield return new WaitForSeconds(0.2f);
+            isGambling = false;
+        }
+
+        private IEnumerator SingleGambleDelqy()
+        {
+            yield return new WaitForSeconds(0.2f);
+            isSingleGamble = true;
+        }
+        private IEnumerator TanGambleDelqy()
+        {
+            yield return new WaitForSeconds(0.2f);
+            isTenGamble = true;
+        }
 
 }

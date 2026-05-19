@@ -1,5 +1,6 @@
 using CustomBackEnd.BackendLogin;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class SettingPresenter : PresenterBase<SettingView,SettingModel>
 {
@@ -24,8 +25,8 @@ public class SettingPresenter : PresenterBase<SettingView,SettingModel>
 
     private void Logout()
     {
-        Debug.Log("Logout");
-        //BackendLogin.Instance.Logout();
+        BackendLogin.Instance.Logout();
+        SceneManager.LoadScene("Title");
     }
 
     private void OpenSettingpopup()

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 public class MatchPresenter : PresenterBase<MatchView, MatchModel>
@@ -10,7 +11,13 @@ public class MatchPresenter : PresenterBase<MatchView, MatchModel>
     public override void OnInitialize()
     {
         View.OnClickMatch += OnClickMatch;
+
         BackEndMatchManager.Instance.OnMatchingStateChanged += View.ShowMatchingUI;
+
+        View.OnClickSelectRule += BackEndMatchManager.Instance.SelectRule;
+
+        View.OnClickSnowGameRule += View.SnowGameRule;
+        View.OnClickHide +=  View.HideGameRule;
     }
 
     public override void OnDestroy()
@@ -21,6 +28,11 @@ public class MatchPresenter : PresenterBase<MatchView, MatchModel>
         {
             BackEndMatchManager.Instance.OnMatchingStateChanged -= View.ShowMatchingUI;
         }
+
+        View.OnClickSelectRule -= BackEndMatchManager.Instance.SelectRule;
+
+        View.OnClickSnowGameRule -= View.SnowGameRule;
+        View.OnClickHide -= View.HideGameRule;
     }
 
     private void OnClickMatch()
